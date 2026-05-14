@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OpenAI 图片生成工具</title>
+    <title>豆包 Seedream 图片生成工具</title>
     <style>
         :root {
             color-scheme: dark;
@@ -794,9 +794,9 @@
     <div class="wrap">
         <!-- ============ 顶部 Tab ============ -->
         <div class="top-tabs">
-            <a class="top-tab active" href="index.html">OpenAI</a>
+            <a class="top-tab" href="index.html">OpenAI</a>
             <a class="top-tab" href="gemini.html">Gemini</a>
-            <a class="top-tab" href="doubao.html">豆包</a>
+            <a class="top-tab active" href="doubao.html">豆包</a>
             <div class="top-tab" data-page="gallery">图片展馆 <span id="topGalleryBadge"
                     style="font-size:12px;opacity:.7;"></span></div>
         </div>
@@ -804,8 +804,8 @@
         <!-- ============ 画图页 ============ -->
         <div id="tabDraw" class="tab-page active">
             <div class="card">
-                <h1>OpenAI 图片生成</h1>
-                <div class="sub">纯前端版：浏览器直连上游 API，支持文生图 & 图生图</div>
+                <h1>豆包 Seedream 图片生成</h1>
+                <div class="sub">火山方舟 Seedream：使用 /images/generations，浏览器直连可能受 CORS 限制</div>
 
                 <!-- ============ 左栏：输入 + 结果 ============ -->
                 <div class="main-panel">
@@ -813,7 +813,7 @@
                     <div class="setting-row3">
                         <div>
                             <label for="baseUrl">Base URL</label>
-                            <input id="baseUrl" placeholder="https://anyrouter.top" autocomplete="off" />
+                            <input id="baseUrl" placeholder="https://ark.cn-beijing.volces.com/api/v3" autocomplete="off" />
                         </div>
                         <div>
                             <label for="apiKey">API Key</label>
@@ -1113,7 +1113,7 @@
         let activeModelIdx = -1;
 
         // ========== 设置 localStorage ==========
-        const SAVED_KEY = 'img_gen_settings';
+        const SAVED_KEY = 'img_gen_settings_doubao';
         const CONFIGS_KEY = 'img_gen_profiles';
         const ACTIVE_CONFIG_KEY = 'img_gen_active_profile';
         function getCurrentConfigValues() {
@@ -1125,9 +1125,9 @@
         }
 
         function applySettings(settings) {
-            els.baseUrl.value = settings?.baseUrl || 'https://api.openai.com';
+            els.baseUrl.value = settings?.baseUrl || 'https://ark.cn-beijing.volces.com/api/v3';
             els.apiKey.value = settings?.apiKey || '';
-            els.model.value = settings?.model || 'gpt-image-1.5';
+            els.model.value = settings?.model || 'doubao-seedream-4-0-250828';
             modelIds = [];
             renderModelPanel();
         }
@@ -1181,7 +1181,7 @@
         }
 
         // ========== 图片展馆 (IndexedDB) ==========
-        const DB_NAME = 'img-gen-gallery';
+        const DB_NAME = 'img-gen-gallery-doubao';
         const DB_VERSION = 1;
         let gallery = [];
 
@@ -1410,6 +1410,7 @@
         }
 
         // ========== 递归搜索 base64 ==========
+        // ========== Doubao Seedream payload and response parsing ==========
         function extractBase64AsDataUrl(dataObj) {
             if (dataObj == null) return null;
             if (Array.isArray(dataObj)) {
@@ -1418,10 +1419,10 @@
                     if (found) return found;
                 }
             } else if (typeof dataObj === 'object') {
-                for (const [key, value] of Object.entries(dataObj)) {
-                    if (key === 'result' && typeof value === 'string' && (value.startsWith('iVBOR') || value.length > 1000)) {
-                        return 'data:image/png;base64,' + value;
-                    }
+                if (typeof dataObj.b64_json === 'string') return 'data:image/png;base64,' + dataObj.b64_json;
+                if (typeof dataObj.base64 === 'string') return 'data:image/png;base64,' + dataObj.base64;
+                if (typeof dataObj.url === 'string') return dataObj.url;
+                for (const value of Object.values(dataObj)) {
                     const found = extractBase64AsDataUrl(value);
                     if (found) return found;
                 }
@@ -1429,35 +1430,24 @@
             return null;
         }
 
-        // ========== 构建请求体 ==========
         async function buildPayload() {
             const prompt = els.prompt.value.trim();
-            const model = els.model.value.trim() || 'gpt-5.3-codex';
-
+            const model = els.model.value.trim() || 'doubao-seedream-4-0-250828';
+            const payload = {
+                model,
+                prompt: refImages.length > 0 ? `请根据参考图片进行编辑或重绘：${prompt}` : prompt,
+                size: '1024x1024',
+                response_format: 'b64_json',
+                stream: false,
+            };
             if (refImages.length > 0) {
-                const editPrompt = `请根据以下要求，对我提供的参考图片进行编辑修改，直接生成修改后的新图片。要求：${prompt}`;
-                const content = refImages.map((ref) => ({ type: 'input_image', image_url: ref.dataUrl }));
-                content.push({ type: 'input_text', text: editPrompt });
-                return {
-                    model,
-                    input: [{ role: 'user', content }],
-                    tools: [{ type: 'image_generation', output_format: 'png' }],
-                    stream: true,
-                };
-            } else {
-                return {
-                    model,
-                    input: [
-                        { role: 'system', content: '你是一个图片生成助手。用户要求你生成图片时，你必须调用 image_generation 工具来生成图片，不要用文字描述图片内容。直接生成图片，不要多说任何话。' },
-                        { role: 'user', content: `请生成以下描述的图片：${prompt}` },
-                    ],
-                    tools: [{ type: 'image_generation', output_format: 'png' }],
-                    stream: true,
-                };
+                payload.image = refImages.map((ref) => ref.dataUrl);
             }
+            return payload;
         }
 
-        // ========== UI 重置 ==========
+
+
         function resetUI() {
             els.loadingMini.classList.remove('active');
             els.eventLog.classList.remove('active');
@@ -1477,6 +1467,47 @@
         }
 
         // ========== 核心：发送请求 ==========
+        function buildProviderRequest(baseUrl, model, apiKey) {
+            return {
+                url: buildApiUrl(baseUrl, '/images/generations'),
+                headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+            };
+        }
+
+        function showGeneratedImage(dataUrl, prompt, startTime) {
+            resultDataUrl = dataUrl;
+            resultBlob = null;
+            let sizeStr = '远程图片';
+
+            if (dataUrl.startsWith('data:')) {
+                const [meta, b64] = dataUrl.split(',');
+                const mimeType = (meta.match(/^data:([^;]+)/) || [])[1] || 'image/png';
+                const byteChars = atob(b64);
+                const bytes = new Uint8Array(byteChars.length);
+                for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+                resultBlob = new Blob([bytes], { type: mimeType });
+                const sizeKB = (bytes.length / 1024).toFixed(1);
+                sizeStr = sizeKB > 1024 ? (sizeKB / 1024).toFixed(1) + ' MB' : sizeKB + ' KB';
+            }
+
+            stopTimer();
+            els.loadingMini.classList.remove('active');
+            els.resultImg.src = dataUrl;
+            els.resultArea.classList.add('active');
+            els.resultStats.textContent = `尺寸 ${els.resultImg.naturalWidth || '?'} x ${els.resultImg.naturalHeight || '?'}  ·  大小 ${sizeStr}  ·  用时 ${((Date.now() - startTime) / 1000).toFixed(1)}s`;
+            els.resultImg.onload = () => {
+                els.resultStats.textContent = `尺寸 ${els.resultImg.naturalWidth} x ${els.resultImg.naturalHeight}  ·  大小 ${sizeStr}  ·  用时 ${((Date.now() - startTime) / 1000).toFixed(1)}s`;
+            };
+            appendEvent('done', `图片已生成！大小: ${sizeStr}`);
+            unlockInputs();
+            els.genBtn.disabled = false;
+            els.genBtn.textContent = '重新生成';
+            const mode = refImages.length > 0 ? 2 : 1;
+            const refUrl = refImages.length > 0 ? refImages[0].dataUrl : null;
+            addToGallery(dataUrl, prompt, mode, refUrl);
+            clearRefImages();
+        }
+
         async function generate() {
             const apiKey = els.apiKey.value.trim();
             if (!apiKey) { alert('请填写 API Key'); return; }
@@ -1491,40 +1522,26 @@
             const prompt = els.prompt.value.trim();
             if (!prompt) { alert('请填写提示词'); return; }
 
-            // 保存设置供下次使用
             saveSettings();
 
             let payload;
             try { payload = await buildPayload(); }
             catch (e) { alert(e.message); return; }
 
-            // ====== UI 进入生成状态 ======
             resetUI();
             lockInputs();
             els.genBtn.disabled = true;
             els.genBtn.textContent = '生成中…';
             els.loadingMini.classList.add('active');
-            els.statEvents.textContent = '📡 事件: 0';
-            els.statTextLen.textContent = '📝 文本: 0 字';
+            els.statEvents.textContent = '事件: 0';
+            els.statTextLen.textContent = '文本: 0 字';
             startTimer();
 
-            const url = buildApiUrl(baseUrl, '/responses');
-            appendEvent('event', `开始请求 POST ${new URL(url).pathname}`);
-            const headers = {
-                'Authorization': 'Bearer ' + apiKey,
-                'chatgpt-account-id': '',
-                'version': '0.122.0',
-                'originator': 'codex_cli_rs',
-                'session_id': 'browser-' + Date.now(),
-                'accept': 'text/event-stream',
-                'Content-Type': 'application/json',
-            };
-
-            let collectedText = [];
+            const requestInfo = buildProviderRequest(baseUrl, model, apiKey);
+            appendEvent('event', `开始请求 POST ${new URL(requestInfo.url).pathname}`);
 
             try {
-                const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
-
+                const response = await fetch(requestInfo.url, { method: 'POST', headers: requestInfo.headers, body: JSON.stringify(payload) });
                 if (!response.ok) {
                     let errText = '';
                     try { errText = await response.text(); } catch { }
@@ -1539,117 +1556,22 @@
                     return;
                 }
 
-                appendEvent('event', `HTTP ${response.status} — 连接成功，开始接收流…`);
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop();
-
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (!trimmed) continue;
-
-                        if (trimmed.startsWith('event: ')) {
-                            const eventName = trimmed.slice(7);
-                            if (eventName !== 'response.output_text.delta') {
-                                appendEvent('event', eventName);
-                            }
-                            continue;
-                        }
-
-                        if (trimmed.startsWith('data: ')) {
-                            const dataStr = trimmed.slice(6);
-                            if (dataStr === '[DONE]' || dataStr === '') continue;
-
-                            try {
-                                const data = JSON.parse(dataStr);
-
-                                const dataUrl = extractBase64AsDataUrl(data);
-                                if (dataUrl) {
-                                    resultDataUrl = dataUrl;
-
-                                    const b64 = dataUrl.split(',')[1];
-                                    const byteChars = atob(b64);
-                                    const bytes = new Uint8Array(byteChars.length);
-                                    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-                                    resultBlob = new Blob([bytes], { type: 'image/png' });
-
-                                    const sizeKB = (bytes.length / 1024).toFixed(1);
-                                    const sizeStr = sizeKB > 1024 ? (sizeKB / 1024).toFixed(1) + ' MB' : sizeKB + ' KB';
-
-                                    stopTimer();
-                                    els.loadingMini.classList.remove('active');
-
-                                    els.resultImg.src = dataUrl;
-                                    els.resultArea.classList.add('active');
-                                    els.resultStats.textContent = `📐 ${els.resultImg.naturalWidth || '?'} × ${els.resultImg.naturalHeight || '?'}  ·  💾 ${sizeStr}  ·  📡 ${eventCount} 个事件  ·  ⏱ ${((Date.now() - startTime) / 1000).toFixed(1)}s`;
-
-                                    els.resultImg.onload = () => {
-                                        els.resultStats.textContent = `📐 ${els.resultImg.naturalWidth} × ${els.resultImg.naturalHeight}  ·  💾 ${sizeStr}  ·  📡 ${eventCount} 个事件  ·  ⏱ ${((Date.now() - startTime) / 1000).toFixed(1)}s`;
-                                    };
-
-                                    appendEvent('done', `图片已抓取！大小: ${sizeStr}`);
-                                    unlockInputs();
-                                    els.genBtn.disabled = false;
-                                    els.genBtn.textContent = '重新生成';
-
-                                    // 添加到展馆
-                                    const mode = refImages.length > 0 ? 2 : 1;
-                                    const refUrl = refImages.length > 0 ? refImages[0].dataUrl : null;
-                                    addToGallery(dataUrl, prompt, mode, refUrl);
-                                    clearRefImages();
-                                    return;
-                                }
-
-                                const delta = data.delta;
-                                if (typeof delta === 'string' && delta) {
-                                    collectedText.push(delta);
-                                    els.textStream.classList.add('active');
-                                    els.textStream.textContent += delta;
-                                    els.textStream.scrollTop = els.textStream.scrollHeight;
-                                    els.statTextLen.textContent = `📝 文本: ${collectedText.join('').length} 字`;
-                                    if (collectedText.length % 5 === 1) {
-                                        appendEvent('text', `已接收 ${collectedText.length} 个 delta (累计 ${collectedText.join('').length} 字)`);
-                                    }
-                                }
-
-                                if (!data.delta && eventCount % 3 === 0) {
-                                    const keys = Object.keys(data).slice(0, 3).join(', ');
-                                    appendEvent('data', keys ? `{ ${keys}... }` : `[${typeof data}]`);
-                                }
-                            } catch { }
-                        }
-                    }
+                const data = await response.json();
+                appendEvent('data', '收到 JSON 响应');
+                const dataUrl = extractBase64AsDataUrl(data);
+                if (dataUrl) {
+                    showGeneratedImage(dataUrl, prompt, startTime);
+                    return;
                 }
 
-                // 流结束，没图片
                 stopTimer();
                 els.loadingMini.classList.remove('active');
                 unlockInputs();
                 els.genBtn.disabled = false;
                 els.genBtn.textContent = '重新生成';
-
-                appendEvent('event', '流已结束 — [DONE]');
-                if (collectedText.length) {
-                    const fullText = collectedText.join('');
-                    appendEvent('done', `模型返回 ${fullText.length} 字文本，未生成图片`);
-                    els.textStream.classList.add('active');
-                    els.textStream.textContent = fullText;
-                    els.statusBar.className = 'status-bar err';
-                    els.statusBar.textContent = '⚠️ 流式返回结束，没找到图片。模型选择了用文字回答而不是生成图片。提示：尝试更明确的描述，例如 "请编辑这张图片…"';
-                } else {
-                    appendEvent('done', '流结束，无图片无文本');
-                    els.statusBar.className = 'status-bar err';
-                    els.statusBar.textContent = '⚠️ 流式返回结束，未收到图片也没有文本内容。可能服务器未正确响应。';
-                }
+                els.statusBar.className = 'status-bar err';
+                els.statusBar.textContent = '响应成功，但未找到图片数据。请检查模型是否支持图片输出。';
+                appendEvent('done', '响应中未找到图片数据');
             } catch (err) {
                 stopTimer();
                 els.loadingMini.classList.remove('active');
@@ -1658,11 +1580,12 @@
                 els.genBtn.textContent = '重新生成';
                 appendEvent('event', `异常: ${err.message || err}`);
                 els.statusBar.className = 'status-bar err';
-                els.statusBar.textContent = '发生异常：' + (err.message || err);
+                els.statusBar.textContent = '发生异常：' + (err.message || err) + '\n提示：浏览器直连第三方 API 可能会被 CORS 拦截，必要时请使用后端代理。';
             }
         }
 
-        // ========== 下载 ==========
+
+
         function downloadFilename() {
             const d = new Date();
             const pad = (n) => String(n).padStart(2, '0');
