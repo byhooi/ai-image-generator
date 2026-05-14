@@ -100,7 +100,8 @@
         }
 
         input,
-        textarea {
+        textarea,
+        select {
             width: 100%;
             box-sizing: border-box;
             border: 1px solid #374151;
@@ -110,6 +111,10 @@
             padding: 10px 12px;
             font-size: 14px;
             font-family: inherit;
+        }
+
+        select {
+            appearance: none;
         }
 
         textarea {
@@ -166,6 +171,35 @@
             .setting-row,
             .setting-row3 {
                 grid-template-columns: 1fr;
+            }
+        }
+
+        .config-row {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr auto;
+            gap: 12px;
+            margin-bottom: 12px;
+            align-items: end;
+        }
+
+        .config-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: nowrap;
+        }
+
+        .config-actions button {
+            padding: 10px 12px;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 700px) {
+            .config-row {
+                grid-template-columns: 1fr;
+            }
+
+            .config-actions {
+                flex-wrap: wrap;
             }
         }
 
@@ -802,6 +836,22 @@
                 <!-- ============ 左栏：输入 + 结果 ============ -->
                 <div class="main-panel">
 
+                    <div class="config-row">
+                        <div>
+                            <label for="configSelect">生图配置</label>
+                            <select id="configSelect"></select>
+                        </div>
+                        <div>
+                            <label for="configName">配置名称</label>
+                            <input id="configName" placeholder="例如：OpenAI / AnyRouter / 本地代理" autocomplete="off" />
+                        </div>
+                        <div class="config-actions">
+                            <button id="newConfigBtn" type="button" class="secondary">新建</button>
+                            <button id="saveConfigBtn" type="button">保存配置</button>
+                            <button id="deleteConfigBtn" type="button" class="secondary">删除</button>
+                        </div>
+                    </div>
+
                     <div class="setting-row3">
                         <div>
                             <label for="baseUrl">Base URL</label>
@@ -825,7 +875,7 @@
 
                     <!-- 参考图片选择器（多图） -->
                     <div class="img-picker">
-                        <label>参考图片（可选，上传后自动切换为图生图模式，支持多张）</label>
+                        <label>参考图片（可选，支持选择或直接粘贴图片，上传后自动切换为图生图模式）</label>
                         <div class="thumb-row" id="thumbRow">
                             <input id="imageFile" type="file" accept="image/*" multiple style="display:none;" />
                             <div id="thumbAdd" class="thumb-add" title="添加参考图片">+</div>
@@ -843,6 +893,7 @@
                         <img id="resultImg" alt="生成的图片" />
                         <div class="result-info"><span id="resultStats"></span></div>
                         <div class="actions">
+                            <button id="editBtn" class="secondary">编辑这张图</button>
                             <button id="downloadBtn">下载图片</button>
                             <button id="copyBtn" class="secondary">复制到剪贴板</button>
                         </div>
@@ -897,6 +948,11 @@
             tabDraw: $('#tabDraw'),
             tabGallery: $('#tabGallery'),
             topGalleryBadge: $('#topGalleryBadge'),
+            configSelect: $('#configSelect'),
+            configName: $('#configName'),
+            newConfigBtn: $('#newConfigBtn'),
+            saveConfigBtn: $('#saveConfigBtn'),
+            deleteConfigBtn: $('#deleteConfigBtn'),
             apiKey: $('#apiKey'),
             pwdToggle: $('#pwdToggle'),
             baseUrl: $('#baseUrl'),
@@ -917,6 +973,7 @@
             resultArea: $('#resultArea'),
             resultImg: $('#resultImg'),
             resultStats: $('#resultStats'),
+            editBtn: $('#editBtn'),
             downloadBtn: $('#downloadBtn'),
             copyBtn: $('#copyBtn'),
             previewOverlay: $('#previewOverlay'),
@@ -930,7 +987,21 @@
         let resultBlob = null;
 
         // ========== 多图选择器 ==========
-        let refImages = []; // { file, dataUrl }
+        let refImages = []; // { file, dataUrl, originalSize, compressedSize }
+        const REF_IMAGE_MAX_SIDE = 1536;
+        const REF_IMAGE_QUALITY = 0.88;
+
+        function formatBytes(bytes) {
+            if (!bytes) return '0 B';
+            const units = ['B', 'KB', 'MB'];
+            let size = bytes;
+            let idx = 0;
+            while (size >= 1024 && idx < units.length - 1) {
+                size /= 1024;
+                idx++;
+            }
+            return `${size.toFixed(idx === 0 ? 0 : 1)} ${units[idx]}`;
+        }
 
         function renderThumbnails() {
             // 清除旧缩略图
@@ -938,6 +1009,9 @@
             refImages.forEach((ref, i) => {
                 const item = document.createElement('div');
                 item.className = 'thumb-item';
+                if (ref.originalSize && ref.compressedSize) {
+                    item.title = `参考图 ${i + 1}：${formatBytes(ref.originalSize)} → ${formatBytes(ref.compressedSize)}`;
+                }
                 const img = document.createElement('img');
                 img.src = ref.dataUrl;
                 img.alt = '参考图 ' + (i + 1);
@@ -962,25 +1036,84 @@
             // 保留 add 按钮事件
         }
 
-        function addRefFiles(files) {
+        function blobToDataUrl(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        async function compressImageFile(file) {
+            const bitmap = await createImageBitmap(file);
+            const scale = Math.min(1, REF_IMAGE_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+            const width = Math.max(1, Math.round(bitmap.width * scale));
+            const height = Math.max(1, Math.round(bitmap.height * scale));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(bitmap, 0, 0, width, height);
+            bitmap.close?.();
+
+            const blob = await new Promise((resolve, reject) => {
+                canvas.toBlob((b) => b ? resolve(b) : reject(new Error('图片压缩失败')), 'image/jpeg', REF_IMAGE_QUALITY);
+            });
+            return {
+                dataUrl: await blobToDataUrl(blob),
+                originalSize: file.size,
+                compressedSize: blob.size,
+            };
+        }
+
+        async function addRefFiles(files) {
             const valid = Array.from(files).filter((f) => {
-                if (f.size > 50 * 1024 * 1024) { alert(`${f.name} 超过 50MB，已跳过`); return false; }
+                if (f.size > 20 * 1024 * 1024) { alert(`${f.name} 超过 20MB，已跳过。请先压缩后再上传。`); return false; }
                 return true;
             });
-            valid.forEach((file) => {
-                const reader = new FileReader();
-                reader.onload = () => {
-                    refImages.push({ file, dataUrl: reader.result });
+            for (const file of valid) {
+                try {
+                    const compressed = await compressImageFile(file);
+                    refImages.push({ file, ...compressed });
                     renderThumbnails();
-                };
-                reader.readAsDataURL(file);
-            });
+                } catch {
+                    const dataUrl = await blobToDataUrl(file);
+                    refImages.push({ file, dataUrl, originalSize: file.size, compressedSize: file.size });
+                    renderThumbnails();
+                }
+            }
             els.imageFile.value = '';
+        }
+
+        async function addPastedImages(e) {
+            const files = Array.from(e.clipboardData?.items || [])
+                .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+                .map((item) => item.getAsFile())
+                .filter(Boolean);
+            if (!files.length) return false;
+            e.preventDefault();
+            await addRefFiles(files);
+            els.statusBar.className = 'status-bar info';
+            els.statusBar.textContent = `已从剪贴板添加 ${files.length} 张参考图片。`;
+            return true;
         }
 
         function clearRefImages() {
             refImages = [];
             renderThumbnails();
+        }
+
+        function editCurrentImage() {
+            if (!resultDataUrl) return;
+            refImages = [{ file: null, dataUrl: resultDataUrl, originalSize: resultBlob?.size || 0, compressedSize: resultBlob?.size || 0 }];
+            renderThumbnails();
+            els.prompt.value = '';
+            els.prompt.placeholder = '描述你想如何修改这张图，例如：保持构图不变，把背景改成雪山';
+            els.prompt.focus();
+            els.statusBar.className = 'status-bar info';
+            els.statusBar.textContent = '已把当前生成图放入参考图片。请输入修改要求后再次生成。';
         }
 
         function lockInputs() {
@@ -1001,6 +1134,7 @@
         els.imageFile.addEventListener('change', () => {
             if (els.imageFile.files.length) addRefFiles(els.imageFile.files);
         });
+        document.addEventListener('paste', addPastedImages);
 
         // ========== 顶部 Tab 切换 ==========
         els.topTabs.forEach((tab) => {
@@ -1013,29 +1147,197 @@
             });
         });
 
-        // ========== localStorage ==========
+        // ========== Model 下拉状态 ==========
+        const modelCache = new Map();
+        let modelIds = [];
+        let activeModelIdx = -1;
+
+        // ========== 生图配置 localStorage ==========
         const SAVED_KEY = 'img_gen_settings';
+        const CONFIGS_KEY = 'img_gen_profiles';
+        const ACTIVE_CONFIG_KEY = 'img_gen_active_profile';
+        const DEFAULT_CONFIGS = [
+            { id: 'preset-openai', name: 'OpenAI', baseUrl: 'https://api.openai.com', apiKey: '', model: 'gpt-image-1.5' },
+            { id: 'preset-gemini', name: 'Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', apiKey: '', model: 'gemini-3.1-flash-image-preview' },
+            { id: 'preset-doubao', name: '豆包', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', apiKey: '', model: 'doubao-seedream-4.5' },
+        ];
+        const IMAGE_MODEL_CANDIDATES = {
+            openai: ['gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'chatgpt-image-latest'],
+            gemini: ['gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview', 'gemini-2.5-flash-image', 'imagen-4.0-generate-001', 'imagen-4.0-ultra-generate-001', 'imagen-4.0-fast-generate-001'],
+            doubao: ['doubao-seedream-4.5', 'doubao-seedream-4.0', 'doubao-seedream-4-5-251128', 'doubao-seedream-4-0-250828'],
+            generic: ['gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview', 'doubao-seedream-4.5'],
+        };
+        let configs = [];
+        let activeConfigId = null;
 
-        // 恢复上次成功生成时保存的设置
-        try {
-            const saved = localStorage.getItem(SAVED_KEY);
-            if (saved) {
-                const s = JSON.parse(saved);
-                if (s.baseUrl) els.baseUrl.value = s.baseUrl;
-                if (s.apiKey) els.apiKey.value = s.apiKey;
-                if (s.model) els.model.value = s.model;
-            }
-        } catch { }
+        function createConfigId() {
+            return 'cfg-' + Date.now() + '-' + Math.random().toString(16).slice(2, 8);
+        }
 
-        function saveSettings() {
+        function getCurrentConfigValues() {
+            return {
+                baseUrl: els.baseUrl.value.trim(),
+                apiKey: els.apiKey.value.trim(),
+                model: els.model.value.trim(),
+            };
+        }
+
+        function applyConfig(config) {
+            els.baseUrl.value = config?.baseUrl || '';
+            els.apiKey.value = config?.apiKey || '';
+            els.model.value = config?.model || '';
+            modelIds = [];
+            renderModelPanel();
+        }
+
+        function persistConfigs() {
             try {
-                localStorage.setItem(SAVED_KEY, JSON.stringify({
-                    baseUrl: els.baseUrl.value.trim(),
-                    apiKey: els.apiKey.value.trim(),
-                    model: els.model.value.trim(),
-                }));
+                localStorage.setItem(CONFIGS_KEY, JSON.stringify(configs));
+                if (activeConfigId) localStorage.setItem(ACTIVE_CONFIG_KEY, activeConfigId);
+                else localStorage.removeItem(ACTIVE_CONFIG_KEY);
             } catch { }
         }
+
+        function ensureDefaultConfigs() {
+            let changed = false;
+            for (const preset of DEFAULT_CONFIGS) {
+                const existing = configs.find((config) => config.id === preset.id);
+                if (!existing) {
+                    configs.push({ ...preset });
+                    changed = true;
+                } else {
+                    if (!existing.baseUrl) { existing.baseUrl = preset.baseUrl; changed = true; }
+                    if (!existing.model) { existing.model = preset.model; changed = true; }
+                    if (preset.id === 'preset-gemini' && existing.model === 'gemini-2.5-flash-image') {
+                        existing.model = preset.model;
+                        changed = true;
+                    }
+                }
+            }
+            return changed;
+        }
+
+        function renderConfigOptions() {
+            els.configSelect.innerHTML = '';
+            const newOpt = document.createElement('option');
+            newOpt.value = '';
+            newOpt.textContent = configs.length ? '+ 新建配置' : '新建配置';
+            els.configSelect.appendChild(newOpt);
+
+            if (!configs.length) {
+                els.configName.value = '';
+                els.deleteConfigBtn.disabled = true;
+                return;
+            }
+
+            configs.forEach((config) => {
+                const opt = document.createElement('option');
+                opt.value = config.id;
+                opt.textContent = config.name;
+                els.configSelect.appendChild(opt);
+            });
+
+            const active = configs.find((config) => config.id === activeConfigId);
+            els.configSelect.value = activeConfigId || '';
+            els.configName.value = active?.name || '';
+            els.deleteConfigBtn.disabled = !active;
+        }
+
+        function beginNewConfig() {
+            activeConfigId = null;
+            applyConfig(null);
+            renderConfigOptions();
+            els.configName.focus();
+            persistConfigs();
+        }
+
+        function loadConfigs() {
+            try {
+                const savedConfigs = JSON.parse(localStorage.getItem(CONFIGS_KEY) || '[]');
+                if (Array.isArray(savedConfigs)) {
+                    configs = savedConfigs
+                        .filter((config) => config && config.id && config.name)
+                        .map((config) => ({
+                            id: config.id,
+                            name: config.name,
+                            baseUrl: config.baseUrl || '',
+                            apiKey: config.apiKey || '',
+                            model: config.model || '',
+                        }));
+                }
+
+                // 兼容旧版单配置：首次升级时自动迁移为一套默认配置
+                if (!configs.length) {
+                    const legacy = JSON.parse(localStorage.getItem(SAVED_KEY) || 'null');
+                    if (legacy?.baseUrl || legacy?.apiKey || legacy?.model) {
+                        activeConfigId = createConfigId();
+                        configs = [{
+                            id: activeConfigId,
+                            name: '默认配置',
+                            baseUrl: legacy.baseUrl || '',
+                            apiKey: legacy.apiKey || '',
+                            model: legacy.model || '',
+                        }];
+                        persistConfigs();
+                    }
+                }
+
+                const addedDefaults = ensureDefaultConfigs();
+                activeConfigId = localStorage.getItem(ACTIVE_CONFIG_KEY);
+                if (configs.length && !configs.some((config) => config.id === activeConfigId)) {
+                    activeConfigId = configs[0].id;
+                }
+
+                if (addedDefaults) persistConfigs();
+            } catch {
+                configs = [];
+                activeConfigId = null;
+                ensureDefaultConfigs();
+            }
+
+            renderConfigOptions();
+            const active = configs.find((config) => config.id === activeConfigId);
+            if (active) applyConfig(active);
+        }
+
+        function saveSettings() {
+            const values = getCurrentConfigValues();
+            const name = els.configName.value.trim() || '未命名配置';
+            let active = configs.find((config) => config.id === activeConfigId);
+
+            if (!active) {
+                active = { id: createConfigId(), name, ...values };
+                configs.unshift(active);
+                activeConfigId = active.id;
+            } else {
+                Object.assign(active, { name, ...values });
+            }
+
+            try {
+                localStorage.setItem(SAVED_KEY, JSON.stringify(values));
+            } catch { }
+
+            persistConfigs();
+            renderConfigOptions();
+        }
+
+        function deleteActiveConfig() {
+            if (!activeConfigId) return;
+            const active = configs.find((config) => config.id === activeConfigId);
+            if (!active) return;
+            if (!confirm(`删除配置「${active.name}」？`)) return;
+
+            configs = configs.filter((config) => config.id !== activeConfigId);
+            activeConfigId = configs[0]?.id || null;
+            persistConfigs();
+            renderConfigOptions();
+
+            const next = configs.find((config) => config.id === activeConfigId);
+            if (next) applyConfig(next);
+            else applyConfig(null);
+        }
+
+        loadConfigs();
 
         function normalizeBaseUrl(input) {
             let base = String(input || '').trim();
@@ -1045,6 +1347,44 @@
             // 如果用户填了 /v1 结尾，去掉，后面拼接时统一加
             if (base.endsWith('/v1')) base = base.slice(0, -3);
             return base;
+        }
+
+        function buildApiUrl(baseUrl, path) {
+            const normalizedPath = path.startsWith('/') ? path : '/' + path;
+            if (/\/(v\d+(beta)?\/openai|api\/v\d+)$/i.test(baseUrl)) {
+                return baseUrl + normalizedPath;
+            }
+            return baseUrl + '/v1' + normalizedPath;
+        }
+
+        function detectProvider(baseUrl) {
+            const value = String(baseUrl || '').toLowerCase();
+            if (value.includes('generativelanguage.googleapis.com')) return 'gemini';
+            if (value.includes('volces.com') || value.includes('doubao') || value.includes('ark.cn-')) return 'doubao';
+            if (value.includes('openai.com')) return 'openai';
+            return 'generic';
+        }
+
+        function normalizeModelId(id) {
+            return String(id || '').trim().replace(/^models\//, '');
+        }
+
+        function getRecommendedImageModels(provider) {
+            return IMAGE_MODEL_CANDIDATES[provider] || IMAGE_MODEL_CANDIDATES.generic;
+        }
+
+        function filterImageModels(ids, provider) {
+            const candidates = getRecommendedImageModels(provider);
+            const candidateSet = new Set(candidates);
+            const cleaned = ids.map(normalizeModelId).filter(Boolean);
+            const matched = cleaned.filter((id) => {
+                if (candidateSet.has(id)) return true;
+                if (provider === 'openai') return /^gpt-image-|^chatgpt-image-latest$/.test(id);
+                if (provider === 'gemini') return /^gemini-[\w.-]*image|^imagen-[\w.-]*generate/.test(id);
+                if (provider === 'doubao') return /seedream/i.test(id);
+                return /image|imagen|seedream/i.test(id);
+            });
+            return [...new Set([...candidates.filter((id) => cleaned.includes(id)), ...matched])];
         }
 
         // ========== 图片展馆 (IndexedDB) ==========
@@ -1375,9 +1715,8 @@
             els.statTextLen.textContent = '📝 文本: 0 字';
             startTimer();
 
-            appendEvent('event', '开始请求 POST /v1/responses');
-
-            const url = baseUrl + '/v1/responses';
+            const url = buildApiUrl(baseUrl, '/responses');
+            appendEvent('event', `开始请求 POST ${new URL(url).pathname}`);
             const headers = {
                 'Authorization': 'Bearer ' + apiKey,
                 'chatgpt-account-id': '',
@@ -1644,7 +1983,22 @@
         });
 
         // ========== 事件绑定 ==========
+        els.configSelect.addEventListener('change', () => {
+            activeConfigId = els.configSelect.value || null;
+            const active = configs.find((config) => config.id === activeConfigId);
+            if (active) {
+                applyConfig(active);
+                renderConfigOptions();
+                persistConfigs();
+            } else {
+                beginNewConfig();
+            }
+        });
+        els.newConfigBtn.addEventListener('click', beginNewConfig);
+        els.saveConfigBtn.addEventListener('click', saveSettings);
+        els.deleteConfigBtn.addEventListener('click', deleteActiveConfig);
         els.genBtn.addEventListener('click', generate);
+        els.editBtn.addEventListener('click', editCurrentImage);
         els.downloadBtn.addEventListener('click', download);
         els.copyBtn.addEventListener('click', copyImage);
         els.prompt.addEventListener('keydown', (e) => {
@@ -1652,16 +2006,12 @@
         });
 
         // ========== Model 下拉（聚焦时拉取模型列表） ==========
-        const modelCache = new Map();
-        let modelIds = [];
-        let activeModelIdx = -1;
-
         function renderModelPanel() {
             els.modelPanel.innerHTML = '';
             if (!modelIds.length) {
                 const empty = document.createElement('div');
                 empty.className = 'combo-empty';
-                empty.textContent = '聚焦自动加载，需先填 Base URL 和 API Key';
+                empty.textContent = '聚焦自动加载生图模型；未填 API Key 时显示推荐模型';
                 els.modelPanel.appendChild(empty);
                 return;
             }
@@ -1685,24 +2035,35 @@
             let baseUrl;
             try { baseUrl = normalizeBaseUrl(els.baseUrl.value); }
             catch { return; }
+            const provider = detectProvider(baseUrl);
+            modelIds = [];
+            renderModelPanel();
             const firstKey = els.apiKey.value.trim();
-            if (!firstKey) return;
-            const cacheKey = baseUrl + '::' + firstKey;
+            if (!firstKey) {
+                modelIds = getRecommendedImageModels(provider);
+                renderModelPanel();
+                return;
+            }
+            const cacheKey = baseUrl + '::' + firstKey + '::image-only';
             if (modelCache.has(cacheKey)) {
                 modelIds = modelCache.get(cacheKey);
                 renderModelPanel();
                 return;
             }
             try {
-                const resp = await fetch(baseUrl + '/v1/models', {
+                const resp = await fetch(buildApiUrl(baseUrl, '/models'), {
                     headers: { 'Authorization': 'Bearer ' + firstKey, 'Content-Type': 'application/json' },
                 });
                 if (resp.ok) {
                     const data = await resp.json();
-                    modelIds = Array.isArray(data?.data) ? data.data.map((m) => m?.id).filter(Boolean) : [];
+                    const allIds = Array.isArray(data?.data) ? data.data.map((m) => m?.id || m?.name).filter(Boolean) : [];
+                    modelIds = filterImageModels(allIds, provider);
                     modelCache.set(cacheKey, modelIds);
                 }
             } catch { }
+            if (!modelIds.length) {
+                modelIds = getRecommendedImageModels(provider);
+            }
             renderModelPanel();
         }
 
