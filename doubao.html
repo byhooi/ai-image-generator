@@ -839,6 +839,16 @@
                         </div>
                     </div>
 
+                    <div class="setting-row">
+                        <div>
+                            <label for="imageSize">图片分辨率</label>
+                            <select id="imageSize">
+                                <option value="2K">2K</option>
+                                <option value="4K">4K</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <!-- 参考图片选择器（多图） -->
                     <div class="img-picker">
                         <label>参考图片（可选，支持选择或直接粘贴图片，上传后自动切换为图生图模式）</label>
@@ -919,6 +929,7 @@
             baseUrl: $('#baseUrl'),
             model: $('#model'),
             modelPanel: $('#modelPanel'),
+            imageSize: $('#imageSize'),
             imageFile: $('#imageFile'),
             thumbRow: $('#thumbRow'),
             thumbAdd: $('#thumbAdd'),
@@ -1087,6 +1098,7 @@
         function lockInputs() {
             els.prompt.disabled = true;
             els.model.disabled = true;
+            els.imageSize.disabled = true;
             els.thumbAdd.style.display = 'none';
             els.thumbRow.querySelectorAll('.thumb-remove').forEach((b) => { b.style.display = 'none'; });
         }
@@ -1094,6 +1106,7 @@
         function unlockInputs() {
             els.prompt.disabled = false;
             els.model.disabled = false;
+            els.imageSize.disabled = false;
             els.thumbAdd.style.display = '';
             els.thumbRow.querySelectorAll('.thumb-remove').forEach((b) => { b.style.display = ''; });
         }
@@ -1121,7 +1134,8 @@
         let activeModelIdx = -1;
         let modelLoadMessage = '';
         const DOUBAO_MIN_PIXELS = 3686400;
-        const DOUBAO_DEFAULT_SIZE = '1920x1920';
+        const DOUBAO_DEFAULT_SIZE = '2K';
+        const DOUBAO_ALLOWED_SIZE_LABELS = ['2K', '4K'];
         const DOUBAO_DEFAULT_MODEL = 'doubao-seedream-4-5-251128';
         const DOUBAO_FALLBACK_MODELS = [
             'doubao-seedream-4-5-251128',
@@ -1137,6 +1151,7 @@
                 baseUrl: els.baseUrl.value.trim(),
                 apiKey: els.apiKey.value.trim(),
                 model: els.model.value.trim(),
+                imageSize: els.imageSize.value,
             };
         }
 
@@ -1144,6 +1159,7 @@
             els.baseUrl.value = settings?.baseUrl || 'https://ark.cn-beijing.volces.com/api/v3';
             els.apiKey.value = settings?.apiKey || '';
             els.model.value = settings?.model || DOUBAO_DEFAULT_MODEL;
+            els.imageSize.value = normalizeDoubaoSize(settings?.imageSize || DOUBAO_DEFAULT_SIZE);
             modelIds = [];
             modelLoadMessage = '';
             renderModelPanel();
@@ -1221,7 +1237,11 @@
 
         function normalizeDoubaoSize(size) {
             const fallback = DOUBAO_DEFAULT_SIZE;
-            const match = String(size || '').trim().match(/^(\d+)x(\d+)$/i);
+            const rawSize = String(size || '').trim();
+            const label = rawSize.toUpperCase();
+            if (DOUBAO_ALLOWED_SIZE_LABELS.includes(label)) return label;
+
+            const match = rawSize.match(/^(\d+)x(\d+)$/i);
             if (!match) return fallback;
 
             const width = Number(match[1]);
@@ -1492,7 +1512,7 @@
             const payload = {
                 model,
                 prompt: refImages.length > 0 ? `请根据参考图片进行编辑或重绘：${prompt}` : prompt,
-                size: normalizeDoubaoSize(DOUBAO_DEFAULT_SIZE),
+                size: normalizeDoubaoSize(els.imageSize.value),
                 response_format: 'b64_json',
                 stream: false,
             };
