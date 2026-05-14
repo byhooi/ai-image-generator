@@ -1078,10 +1078,10 @@
             refImages = [ref];
             renderThumbnails();
             els.prompt.value = '';
-            els.prompt.placeholder = '?????????????????????????????';
+            els.prompt.placeholder = '描述你想如何修改这张图片，例如：保留人物姿势，把背景改成夜晚街景';
             els.prompt.focus();
             els.statusBar.className = 'status-bar info';
-            els.statusBar.textContent = `???????????????${formatBytes(ref.originalSize)} ? ${formatBytes(ref.compressedSize)}??????????????`;
+            els.statusBar.textContent = `已把当前生成图加入参考图片：${formatBytes(ref.originalSize)} → ${formatBytes(ref.compressedSize)}。请输入新的编辑要求。`;
         }
 
         function lockInputs() {
@@ -1397,7 +1397,7 @@
                 const recordMeta = document.createElement('span');
                 recordMeta.className = 'record-meta';
                 const modelName = r.model || '模型未记录';
-                recordMeta.textContent = `${modelName} · ${r.time}`;
+                recordMeta.textContent = r.time;
                 recordMeta.title = `模型：${modelName}\n时间：${r.time}`;
                 meta.appendChild(recordMeta);
                 const delBtn = document.createElement('button');

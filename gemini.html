@@ -765,6 +765,14 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 8px;
+        }
+
+        .gallery-item .info .record-meta {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .gallery-item .info .del-btn {
@@ -1070,10 +1078,10 @@
             refImages = [ref];
             renderThumbnails();
             els.prompt.value = '';
-            els.prompt.placeholder = '?????????????????????????????';
+            els.prompt.placeholder = '描述你想如何修改这张图片，例如：保留人物姿势，把背景改成夜晚街景';
             els.prompt.focus();
             els.statusBar.className = 'status-bar info';
-            els.statusBar.textContent = `???????????????${formatBytes(ref.originalSize)} ? ${formatBytes(ref.compressedSize)}??????????????`;
+            els.statusBar.textContent = `已把当前生成图加入参考图片：${formatBytes(ref.originalSize)} → ${formatBytes(ref.compressedSize)}。请输入新的编辑要求。`;
         }
 
         function lockInputs() {
@@ -1238,13 +1246,14 @@
             } catch { }
         }
 
-        async function addToGallery(dataUrl, prompt, mode, refDataUrl) {
+        async function addToGallery(dataUrl, prompt, mode, refDataUrl, model) {
             const id = Date.now();
             const record = {
                 id,
                 dataUrl,
                 prompt,
                 mode,
+                model: normalizeModelId(model) || '模型未记录',
                 refDataUrl: refDataUrl || null,
                 time: new Date().toLocaleString('zh-CN'),
             };
@@ -1341,9 +1350,12 @@
 
                 const meta = document.createElement('div');
                 meta.className = 'meta';
-                const timeSpan = document.createElement('span');
-                timeSpan.textContent = r.time;
-                meta.appendChild(timeSpan);
+                const recordMeta = document.createElement('span');
+                recordMeta.className = 'record-meta';
+                const modelName = r.model || '模型未记录';
+                recordMeta.textContent = r.time;
+                recordMeta.title = `模型：${modelName}\n时间：${r.time}`;
+                meta.appendChild(recordMeta);
                 const delBtn = document.createElement('button');
                 delBtn.className = 'del-btn';
                 delBtn.innerHTML = '&#x1f5d1;';
@@ -1507,7 +1519,7 @@
             els.genBtn.textContent = '重新生成';
             const mode = refImages.length > 0 ? 2 : 1;
             const refUrl = refImages.length > 0 ? refImages[0].dataUrl : null;
-            addToGallery(dataUrl, prompt, mode, refUrl);
+            addToGallery(dataUrl, prompt, mode, refUrl, els.model.value);
             clearRefImages();
         }
 
