@@ -1106,11 +1106,6 @@
         const SAVED_KEY = 'img_gen_settings';
         const CONFIGS_KEY = 'img_gen_profiles';
         const ACTIVE_CONFIG_KEY = 'img_gen_active_profile';
-        const IMAGE_MODEL_CANDIDATES = {
-            openai: ['gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'chatgpt-image-latest'],
-            generic: ['gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'chatgpt-image-latest'],
-        };
-
         function getCurrentConfigValues() {
             return {
                 baseUrl: els.baseUrl.value.trim(),
@@ -1171,30 +1166,8 @@
             return baseUrl + '/v1' + normalizedPath;
         }
 
-        function detectProvider(baseUrl) {
-            const value = String(baseUrl || '').toLowerCase();
-            if (value.includes('openai.com')) return 'openai';
-            return 'generic';
-        }
-
         function normalizeModelId(id) {
             return String(id || '').trim().replace(/^models\//, '');
-        }
-
-        function getRecommendedImageModels(provider) {
-            return IMAGE_MODEL_CANDIDATES[provider] || IMAGE_MODEL_CANDIDATES.generic;
-        }
-
-        function filterImageModels(ids, provider) {
-            const candidates = getRecommendedImageModels(provider);
-            const candidateSet = new Set(candidates);
-            const cleaned = ids.map(normalizeModelId).filter(Boolean);
-            const matched = cleaned.filter((id) => {
-                if (candidateSet.has(id)) return true;
-                if (provider === 'openai') return /^gpt-image-|^chatgpt-image-latest$/.test(id);
-                return /^gpt-image-|^chatgpt-image-latest$/.test(id);
-            });
-            return [...new Set([...candidates.filter((id) => cleaned.includes(id)), ...matched])];
         }
 
         // ========== 图片展馆 (IndexedDB) ==========
@@ -1807,7 +1780,7 @@
             if (!modelIds.length) {
                 const empty = document.createElement('div');
                 empty.className = 'combo-empty';
-                empty.textContent = '聚焦自动加载生图模型；未填 API Key 时显示推荐模型';
+                empty.textContent = '聚焦自动加载模型列表，需先填 Base URL 和 API Key';
                 els.modelPanel.appendChild(empty);
                 return;
             }
@@ -1831,16 +1804,11 @@
             let baseUrl;
             try { baseUrl = normalizeBaseUrl(els.baseUrl.value); }
             catch { return; }
-            const provider = detectProvider(baseUrl);
             modelIds = [];
             renderModelPanel();
             const firstKey = els.apiKey.value.trim();
-            if (!firstKey) {
-                modelIds = getRecommendedImageModels(provider);
-                renderModelPanel();
-                return;
-            }
-            const cacheKey = baseUrl + '::' + firstKey + '::image-only';
+            if (!firstKey) return;
+            const cacheKey = baseUrl + '::' + firstKey;
             if (modelCache.has(cacheKey)) {
                 modelIds = modelCache.get(cacheKey);
                 renderModelPanel();
@@ -1853,13 +1821,10 @@
                 if (resp.ok) {
                     const data = await resp.json();
                     const allIds = Array.isArray(data?.data) ? data.data.map((m) => m?.id || m?.name).filter(Boolean) : [];
-                    modelIds = filterImageModels(allIds, provider);
+                    modelIds = [...new Set(allIds.map(normalizeModelId).filter(Boolean))];
                     modelCache.set(cacheKey, modelIds);
                 }
             } catch { }
-            if (!modelIds.length) {
-                modelIds = getRecommendedImageModels(provider);
-            }
             renderModelPanel();
         }
 
