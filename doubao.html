@@ -1111,6 +1111,8 @@
         const modelCache = new Map();
         let modelIds = [];
         let activeModelIdx = -1;
+        const DOUBAO_MIN_PIXELS = 3686400;
+        const DOUBAO_DEFAULT_SIZE = '1920x1920';
 
         // ========== 设置 localStorage ==========
         const SAVED_KEY = 'img_gen_settings_doubao';
@@ -1178,6 +1180,19 @@
 
         function normalizeModelId(id) {
             return String(id || '').trim().replace(/^models\//, '');
+        }
+
+        function normalizeDoubaoSize(size) {
+            const fallback = DOUBAO_DEFAULT_SIZE;
+            const match = String(size || '').trim().match(/^(\d+)x(\d+)$/i);
+            if (!match) return fallback;
+
+            const width = Number(match[1]);
+            const height = Number(match[2]);
+            if (!Number.isFinite(width) || !Number.isFinite(height) || width * height < DOUBAO_MIN_PIXELS) {
+                return fallback;
+            }
+            return `${width}x${height}`;
         }
 
         // ========== 图片展馆 (IndexedDB) ==========
@@ -1436,7 +1451,7 @@
             const payload = {
                 model,
                 prompt: refImages.length > 0 ? `请根据参考图片进行编辑或重绘：${prompt}` : prompt,
-                size: '1024x1024',
+                size: normalizeDoubaoSize(DOUBAO_DEFAULT_SIZE),
                 response_format: 'b64_json',
                 stream: false,
             };
