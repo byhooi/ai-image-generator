@@ -765,6 +765,14 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 8px;
+        }
+
+        .gallery-item .info .record-meta {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .gallery-item .info .del-btn {
@@ -1111,8 +1119,10 @@
         const modelCache = new Map();
         let modelIds = [];
         let activeModelIdx = -1;
+        let modelLoadMessage = '';
         const DOUBAO_MIN_PIXELS = 3686400;
         const DOUBAO_DEFAULT_SIZE = '1920x1920';
+        const DOUBAO_FALLBACK_MODELS = ['doubao-seedream-4-0-250828'];
 
         // ========== 设置 localStorage ==========
         const SAVED_KEY = 'img_gen_settings_doubao';
@@ -1131,6 +1141,7 @@
             els.apiKey.value = settings?.apiKey || '';
             els.model.value = settings?.model || 'doubao-seedream-4-0-250828';
             modelIds = [];
+            modelLoadMessage = '';
             renderModelPanel();
         }
 
@@ -1180,6 +1191,28 @@
 
         function normalizeModelId(id) {
             return String(id || '').trim().replace(/^models\//, '');
+        }
+
+        function uniqueModelIds(ids) {
+            return [...new Set(ids.map(normalizeModelId).filter(Boolean))];
+        }
+
+        function extractModelIds(data) {
+            const directList = Array.isArray(data?.data)
+                ? data.data
+                : Array.isArray(data?.models)
+                    ? data.models
+                    : Array.isArray(data?.items)
+                        ? data.items
+                        : Array.isArray(data)
+                            ? data
+                            : [];
+
+            return uniqueModelIds(directList.flatMap((item) => {
+                if (typeof item === 'string') return [item];
+                if (!item || typeof item !== 'object') return [];
+                return [item.id, item.name, item.model, item.model_id, item.endpoint_id];
+            }));
         }
 
         function normalizeDoubaoSize(size) {
@@ -1253,13 +1286,14 @@
             } catch { }
         }
 
-        async function addToGallery(dataUrl, prompt, mode, refDataUrl) {
+        async function addToGallery(dataUrl, prompt, mode, refDataUrl, model) {
             const id = Date.now();
             const record = {
                 id,
                 dataUrl,
                 prompt,
                 mode,
+                model: normalizeModelId(model) || '模型未记录',
                 refDataUrl: refDataUrl || null,
                 time: new Date().toLocaleString('zh-CN'),
             };
@@ -1356,9 +1390,12 @@
 
                 const meta = document.createElement('div');
                 meta.className = 'meta';
-                const timeSpan = document.createElement('span');
-                timeSpan.textContent = r.time;
-                meta.appendChild(timeSpan);
+                const recordMeta = document.createElement('span');
+                recordMeta.className = 'record-meta';
+                const modelName = r.model || '模型未记录';
+                recordMeta.textContent = `${modelName} · ${r.time}`;
+                recordMeta.title = `模型：${modelName}\n时间：${r.time}`;
+                meta.appendChild(recordMeta);
                 const delBtn = document.createElement('button');
                 delBtn.className = 'del-btn';
                 delBtn.innerHTML = '&#x1f5d1;';
@@ -1519,7 +1556,7 @@
             els.genBtn.textContent = '重新生成';
             const mode = refImages.length > 0 ? 2 : 1;
             const refUrl = refImages.length > 0 ? refImages[0].dataUrl : null;
-            addToGallery(dataUrl, prompt, mode, refUrl);
+            addToGallery(dataUrl, prompt, mode, refUrl, els.model.value);
             clearRefImages();
         }
 
@@ -1728,9 +1765,15 @@
             if (!modelIds.length) {
                 const empty = document.createElement('div');
                 empty.className = 'combo-empty';
-                empty.textContent = '聚焦自动加载模型列表，需先填 Base URL 和 API Key';
+                empty.textContent = modelLoadMessage || '聚焦自动加载模型列表，需先填 Base URL 和 API Key';
                 els.modelPanel.appendChild(empty);
                 return;
+            }
+            if (modelLoadMessage) {
+                const status = document.createElement('div');
+                status.className = 'combo-empty';
+                status.textContent = modelLoadMessage;
+                els.modelPanel.appendChild(status);
             }
             modelIds.forEach((id, i) => {
                 const item = document.createElement('div');
@@ -1751,28 +1794,54 @@
         async function loadModels() {
             let baseUrl;
             try { baseUrl = normalizeBaseUrl(els.baseUrl.value); }
-            catch { return; }
+            catch (e) {
+                modelIds = [];
+                modelLoadMessage = e.message;
+                renderModelPanel();
+                return;
+            }
             modelIds = [];
+            modelLoadMessage = '正在加载模型列表...';
             renderModelPanel();
             const firstKey = els.apiKey.value.trim();
-            if (!firstKey) return;
+            if (!firstKey) {
+                modelLoadMessage = '请先填写 API Key，再聚焦加载模型列表';
+                renderModelPanel();
+                return;
+            }
             const cacheKey = baseUrl + '::' + firstKey;
             if (modelCache.has(cacheKey)) {
                 modelIds = modelCache.get(cacheKey);
+                modelLoadMessage = modelIds.length ? '' : '模型列表为空，请检查当前 Key 是否有可用模型';
                 renderModelPanel();
                 return;
             }
             try {
                 const resp = await fetch(buildApiUrl(baseUrl, '/models'), {
-                    headers: { 'Authorization': 'Bearer ' + firstKey, 'Content-Type': 'application/json' },
+                    headers: { 'Authorization': 'Bearer ' + firstKey },
                 });
-                if (resp.ok) {
-                    const data = await resp.json();
-                    const allIds = Array.isArray(data?.data) ? data.data.map((m) => m?.id || m?.name).filter(Boolean) : [];
-                    modelIds = [...new Set(allIds.map(normalizeModelId).filter(Boolean))];
-                    modelCache.set(cacheKey, modelIds);
+                if (!resp.ok) {
+                    let errText = '';
+                    try { errText = await resp.text(); } catch { }
+                    modelIds = DOUBAO_FALLBACK_MODELS;
+                    modelLoadMessage = `模型列表接口失败：HTTP ${resp.status}${errText ? '，已显示常用模型' : ''}`;
+                    renderModelPanel();
+                    return;
                 }
-            } catch { }
+
+                const data = await resp.json();
+                modelIds = extractModelIds(data);
+                if (!modelIds.length) {
+                    modelIds = DOUBAO_FALLBACK_MODELS;
+                    modelLoadMessage = '接口返回为空或结构不匹配，已显示常用模型';
+                } else {
+                    modelLoadMessage = '';
+                }
+                modelCache.set(cacheKey, modelIds);
+            } catch (e) {
+                modelIds = DOUBAO_FALLBACK_MODELS;
+                modelLoadMessage = `模型列表加载失败：${e.message || e}，已显示常用模型`;
+            }
             renderModelPanel();
         }
 
