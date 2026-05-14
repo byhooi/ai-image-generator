@@ -1122,7 +1122,11 @@
         let modelLoadMessage = '';
         const DOUBAO_MIN_PIXELS = 3686400;
         const DOUBAO_DEFAULT_SIZE = '1920x1920';
-        const DOUBAO_FALLBACK_MODELS = ['doubao-seedream-4-0-250828'];
+        const DOUBAO_DEFAULT_MODEL = 'doubao-seedream-4-5-251128';
+        const DOUBAO_FALLBACK_MODELS = [
+            'doubao-seedream-4-5-251128',
+            'doubao-seedream-5-0-260128',
+        ];
 
         // ========== 设置 localStorage ==========
         const SAVED_KEY = 'img_gen_settings_doubao';
@@ -1139,7 +1143,7 @@
         function applySettings(settings) {
             els.baseUrl.value = settings?.baseUrl || 'https://ark.cn-beijing.volces.com/api/v3';
             els.apiKey.value = settings?.apiKey || '';
-            els.model.value = settings?.model || 'doubao-seedream-4-0-250828';
+            els.model.value = settings?.model || DOUBAO_DEFAULT_MODEL;
             modelIds = [];
             modelLoadMessage = '';
             renderModelPanel();
@@ -1484,7 +1488,7 @@
 
         async function buildPayload() {
             const prompt = els.prompt.value.trim();
-            const model = els.model.value.trim() || 'doubao-seedream-4-0-250828';
+            const model = els.model.value.trim() || DOUBAO_DEFAULT_MODEL;
             const payload = {
                 model,
                 prompt: refImages.length > 0 ? `请根据参考图片进行编辑或重绘：${prompt}` : prompt,
