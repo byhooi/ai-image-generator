@@ -1515,6 +1515,7 @@
                 size: normalizeDoubaoSize(els.imageSize.value),
                 response_format: 'b64_json',
                 stream: false,
+                watermark: false,
             };
             if (refImages.length > 0) {
                 payload.image = refImages.map((ref) => ref.dataUrl);
