@@ -1135,7 +1135,7 @@
         function applySettings(settings) {
             els.baseUrl.value = settings?.baseUrl || 'https://api.openai.com';
             els.apiKey.value = settings?.apiKey || '';
-            els.model.value = settings?.model || 'gpt-image-1.5';
+            els.model.value = settings?.model || 'gpt-5.3-codex';
             modelIds = [];
             renderModelPanel();
         }
@@ -1584,6 +1584,23 @@
                             try {
                                 const data = JSON.parse(dataStr);
 
+                                // 提取并展示上游具体的错误信息
+                                if (data.error) {
+                                    const errMsg = data.error.message || JSON.stringify(data.error);
+                                    appendEvent('event', `🔴 错误详情: ${errMsg}`);
+                                    els.statusBar.className = 'status-bar err';
+                                    els.statusBar.textContent = `上游接口报错：${errMsg}`;
+                                }
+                                if (data.response && data.response.status === 'failed') {
+                                    const err = data.response.status_details?.error;
+                                    if (err) {
+                                        const errMsg = err.message || JSON.stringify(err);
+                                        appendEvent('event', `🔴 失败原因: ${errMsg}`);
+                                        els.statusBar.className = 'status-bar err';
+                                        els.statusBar.textContent = `生成失败：${errMsg}`;
+                                    }
+                                }
+
                                 const dataUrl = extractBase64AsDataUrl(data);
                                 if (dataUrl) {
                                     resultDataUrl = dataUrl;
@@ -1843,7 +1860,11 @@
                 if (resp.ok) {
                     const data = await resp.json();
                     const allIds = Array.isArray(data?.data) ? data.data.map((m) => m?.id || m?.name).filter(Boolean) : [];
-                    modelIds = [...new Set(allIds.map(normalizeModelId).filter(Boolean))];
+                    modelIds = [...new Set(allIds.map(normalizeModelId).filter(Boolean))]
+                        .filter(id => {
+                            const l = id.toLowerCase();
+                            return l === 'gpt-5.3-codex' || l === 'gpt-5.5';
+                        });
                     modelCache.set(cacheKey, modelIds);
                 }
             } catch { }
