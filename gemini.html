@@ -1119,6 +1119,14 @@
         const modelCache = new Map();
         let modelIds = [];
         let activeModelIdx = -1;
+        const GEMINI_IMAGE_MODELS = [
+            'gemini-3.1-flash-image-preview',
+            'gemini-3-pro-image-preview',
+        ];
+
+        function isImageModelId(id) {
+            return GEMINI_IMAGE_MODELS.includes(normalizeModelId(id).toLowerCase());
+        }
 
         // ========== 设置 localStorage ==========
         const SAVED_KEY = 'img_gen_settings_gemini';
@@ -1533,6 +1541,10 @@
 
             const model = els.model.value.trim();
             if (!model) { alert('请填写或选择 Model'); return; }
+            if (!isImageModelId(model)) {
+                alert(`当前工具只保留最新的 Gemini 图片模型，请选择：\n${GEMINI_IMAGE_MODELS.join('\n')}`);
+                return;
+            }
 
             const prompt = els.prompt.value.trim();
             if (!prompt) { alert('请填写提示词'); return; }
@@ -1769,7 +1781,8 @@
                 if (resp.ok) {
                     const data = await resp.json();
                     const allIds = Array.isArray(data?.models) ? data.models.map((m) => m?.name || m?.id).filter(Boolean) : [];
-                    modelIds = [...new Set(allIds.map(normalizeModelId).filter(Boolean))];
+                    const availableIds = new Set(allIds.map(normalizeModelId).filter(Boolean));
+                    modelIds = GEMINI_IMAGE_MODELS.filter((id) => availableIds.has(id));
                     modelCache.set(cacheKey, modelIds);
                 }
             } catch { }
