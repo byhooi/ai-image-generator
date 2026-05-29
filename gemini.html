@@ -1120,12 +1120,21 @@
         let modelIds = [];
         let activeModelIdx = -1;
         const GEMINI_IMAGE_MODELS = [
-            'gemini-3.1-flash-image-preview',
-            'gemini-3-pro-image-preview',
+            'gemini-3.1-flash-image',
+            'gemini-3-pro-image',
         ];
+        const DEPRECATED_GEMINI_IMAGE_MODELS = new Map([
+            ['gemini-3.1-flash-image-preview', 'gemini-3.1-flash-image'],
+            ['gemini-3-pro-image-preview', 'gemini-3-pro-image'],
+        ]);
+
+        function resolveImageModelId(id) {
+            const normalized = normalizeModelId(id).toLowerCase();
+            return DEPRECATED_GEMINI_IMAGE_MODELS.get(normalized) || normalized;
+        }
 
         function isImageModelId(id) {
-            return GEMINI_IMAGE_MODELS.includes(normalizeModelId(id).toLowerCase());
+            return GEMINI_IMAGE_MODELS.includes(resolveImageModelId(id));
         }
 
         // ========== 设置 localStorage ==========
@@ -1143,7 +1152,7 @@
         function applySettings(settings) {
             els.baseUrl.value = settings?.baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
             els.apiKey.value = settings?.apiKey || '';
-            els.model.value = settings?.model || 'gemini-3.1-flash-image-preview';
+            els.model.value = settings?.model ? resolveImageModelId(settings.model) : 'gemini-3.1-flash-image';
             modelIds = [];
             renderModelPanel();
         }
@@ -1539,12 +1548,13 @@
             try { baseUrl = normalizeBaseUrl(els.baseUrl.value); }
             catch (e) { alert(e.message); return; }
 
-            const model = els.model.value.trim();
+            const model = resolveImageModelId(els.model.value);
             if (!model) { alert('请填写或选择 Model'); return; }
             if (!isImageModelId(model)) {
                 alert(`当前工具只保留最新的 Gemini 图片模型，请选择：\n${GEMINI_IMAGE_MODELS.join('\n')}`);
                 return;
             }
+            els.model.value = model;
 
             const prompt = els.prompt.value.trim();
             if (!prompt) { alert('请填写提示词'); return; }
