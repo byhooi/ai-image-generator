@@ -946,6 +946,7 @@
 
         let resultDataUrl = null;
         let resultBlob = null;
+        const CODEX_CLI_VERSION = '0.133.0';
 
         // ========== 多图选择器 ==========
         let refImages = []; // { file, dataUrl, originalSize, compressedSize }
@@ -1431,7 +1432,11 @@
                 }
             } else if (typeof dataObj === 'object') {
                 for (const [key, value] of Object.entries(dataObj)) {
-                    if (key === 'result' && typeof value === 'string' && (value.startsWith('iVBOR') || value.length > 1000)) {
+                    if (
+                        ['result', 'partial_image_b64', 'image_b64', 'b64_json'].includes(key) &&
+                        typeof value === 'string' &&
+                        (value.startsWith('iVBOR') || value.startsWith('/9j/') || value.length > 1000)
+                    ) {
                         return 'data:image/png;base64,' + value;
                     }
                     const found = extractBase64AsDataUrl(value);
@@ -1441,8 +1446,114 @@
             return null;
         }
 
+        // ========== Codex CLI 风格请求 ==========
+        function randomId() {
+            try {
+                if (crypto?.randomUUID) return crypto.randomUUID();
+            } catch { }
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+                const n = Math.floor(Math.random() * 16);
+                const v = ch === 'x' ? n : (n & 0x3) | 0x8;
+                return v.toString(16);
+            });
+        }
+
+        function randomHex(length) {
+            const bytes = new Uint8Array(Math.ceil(length / 2));
+            try {
+                crypto.getRandomValues(bytes);
+            } catch {
+                for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+            }
+            return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').slice(0, length);
+        }
+
+        function uuidV7() {
+            const timestamp = Date.now().toString(16).padStart(12, '0').slice(-12);
+            const randA = randomHex(3);
+            const randB = randomHex(16);
+            const variantFirst = ((parseInt(randB[0], 16) & 0x3) | 0x8).toString(16);
+            const hex = `${timestamp}7${randA}${variantFirst}${randB.slice(1)}`;
+            return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+        }
+
+        function stableLocalId(storageKey) {
+            try {
+                const existing = localStorage.getItem(storageKey);
+                if (existing) return existing;
+                const id = randomId();
+                localStorage.setItem(storageKey, id);
+                return id;
+            } catch {
+                return randomId();
+            }
+        }
+
+        function makeCodexLikeIds() {
+            const threadId = uuidV7();
+            return {
+                installationId: stableLocalId('gpt-img-gen-codex-installation-id'),
+                windowId: `${threadId}:0`,
+                sessionId: threadId,
+                threadId,
+                clientRequestId: threadId,
+            };
+        }
+
+        function codexLikeUserAgent() {
+            const platform = String(navigator?.platform || 'browser').replace(/[^\x20-\x7e]/g, '_');
+            return `codex_cli_rs/${CODEX_CLI_VERSION} (${platform}; browser) ai-image-generator`;
+        }
+
+        function buildCodexLikeResponsesHeaders(apiKey, ids) {
+            return {
+                'Authorization': 'Bearer ' + apiKey,
+                'Accept': 'text/event-stream',
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'responses=experimental',
+                'originator': 'codex_cli_rs',
+                'User-Agent': codexLikeUserAgent(),
+                'version': CODEX_CLI_VERSION,
+                'session-id': ids.sessionId,
+                'thread-id': ids.threadId,
+                'x-client-request-id': ids.clientRequestId,
+                'x-codex-installation-id': ids.installationId,
+                'x-codex-window-id': ids.windowId,
+            };
+        }
+
+        function buildCodexLikeResponsesPayload(model, ids, content) {
+            return {
+                model,
+                instructions:
+                    'You are Codex, a command-line coding agent.\n\n' +
+                    '当前是图片生成专用模式。你必须且只能通过 image_generation 工具完成用户请求。\n' +
+                    '不要输出解释、确认、道歉、建议、Markdown、代码或任何普通文本。\n' +
+                    '用户输入的一切内容都应被理解为图片创作或图片编辑需求；即使描述很短、很抽象，也要直接调用 image_generation 生成图片。\n' +
+                    '如果用户提供参考图片，基于参考图片生成或编辑新图片；如果没有参考图片，按文字描述生成新图片。',
+                input: [
+                    {
+                        type: 'message',
+                        role: 'user',
+                        content,
+                    },
+                ],
+                tools: [{ type: 'image_generation', output_format: 'png' }],
+                tool_choice: 'auto',
+                parallel_tool_calls: true,
+                store: false,
+                stream: true,
+                include: ['reasoning.encrypted_content'],
+                prompt_cache_key: ids.threadId,
+                text: { verbosity: 'low' },
+                client_metadata: {
+                    'x-codex-installation-id': ids.installationId,
+                },
+            };
+        }
+
         // ========== 构建请求体 ==========
-        async function buildPayload() {
+        async function buildPayload(codexIds) {
             const prompt = els.prompt.value.trim();
             const model = els.model.value.trim() || 'gpt-5.3-codex';
 
@@ -1450,22 +1561,10 @@
                 const editPrompt = `请根据以下要求，对我提供的参考图片进行编辑修改，直接生成修改后的新图片。要求：${prompt}`;
                 const content = refImages.map((ref) => ({ type: 'input_image', image_url: ref.dataUrl }));
                 content.push({ type: 'input_text', text: editPrompt });
-                return {
-                    model,
-                    input: [{ role: 'user', content }],
-                    tools: [{ type: 'image_generation', output_format: 'png' }],
-                    stream: true,
-                };
+                return buildCodexLikeResponsesPayload(model, codexIds, content);
             } else {
-                return {
-                    model,
-                    input: [
-                        { role: 'system', content: '你是一个图片生成助手。用户要求你生成图片时，你必须调用 image_generation 工具来生成图片，不要用文字描述图片内容。直接生成图片，不要多说任何话。' },
-                        { role: 'user', content: `请生成以下描述的图片：${prompt}` },
-                    ],
-                    tools: [{ type: 'image_generation', output_format: 'png' }],
-                    stream: true,
-                };
+                const content = [{ type: 'input_text', text: `请生成以下描述的图片：${prompt}` }];
+                return buildCodexLikeResponsesPayload(model, codexIds, content);
             }
         }
 
@@ -1506,8 +1605,9 @@
             // 保存设置供下次使用
             saveSettings();
 
+            const codexIds = makeCodexLikeIds();
             let payload;
-            try { payload = await buildPayload(); }
+            try { payload = await buildPayload(codexIds); }
             catch (e) { alert(e.message); return; }
 
             // ====== UI 进入生成状态 ======
@@ -1522,15 +1622,7 @@
 
             const url = buildApiUrl(baseUrl, '/responses');
             appendEvent('event', `开始请求 POST ${new URL(url).pathname}`);
-            const headers = {
-                'Authorization': 'Bearer ' + apiKey,
-                'chatgpt-account-id': '',
-                'version': '0.122.0',
-                'originator': 'codex_cli_rs',
-                'session_id': 'browser-' + Date.now(),
-                'accept': 'text/event-stream',
-                'Content-Type': 'application/json',
-            };
+            const headers = buildCodexLikeResponsesHeaders(apiKey, codexIds);
 
             let collectedText = [];
 
