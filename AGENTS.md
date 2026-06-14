@@ -2,12 +2,12 @@
 
 ## 项目结构与模块组织
 
-本仓库是部署在 GitHub Pages 上的静态 AI 图片生成工具，不需要后端服务或构建流程。主要文件如下：
+本仓库是部署在 Cloudflare Pages 上的静态 AI 图片生成工具，不需要后端服务或构建流程。主要文件如下：
 
 - `index.html`：主图片生成页面。
 - `gemini.html`：Gemini 图片生成页面，包含模型列表、模型校验和旧模型兼容逻辑。
 - `doubao.html`：豆包图片生成页面。
-- `CNAME`：GitHub Pages 自定义域名配置。
+- `CNAME`：旧 GitHub Pages 自定义域名配置；Cloudflare Pages 当前不依赖它，域名在 Cloudflare Pages 项目中配置。
 - `CLAUDE.md`：本地助手协作说明，不属于应用代码。
 
 当前没有独立的 `src/`、`tests/` 或 assets 目录。修改时应优先限制在相关 HTML 文件内，只有在确实需要复用资源或配置时再新增目录。
@@ -20,13 +20,15 @@
 Start-Process .\index.html
 ```
 
-如需模拟 GitHub Pages 的访问方式，可启动本地静态服务：
+如需模拟 Cloudflare Pages 的静态托管访问方式，可启动本地静态服务：
 
 ```powershell
 python -m http.server 8000
 ```
 
 然后访问 `http://localhost:8000/index.html`、`gemini.html` 或 `doubao.html`。
+
+Cloudflare Pages 部署侧保持空构建命令，发布目录指向仓库根目录。日常开发不需要运行构建命令。
 
 提交前建议执行：
 

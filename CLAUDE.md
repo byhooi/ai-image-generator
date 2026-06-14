@@ -8,17 +8,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目性质
 
-- 纯前端 GitHub Pages 项目,无后端、无构建步骤、无包管理器(没有 `package.json`)、无测试套件、无 lint 配置。
+- 纯前端 Cloudflare Pages 项目,无后端、无构建步骤、无包管理器(没有 `package.json`)、无测试套件、无 lint 配置。
 - 不要建议 `npm install` / `npm run build` / `npm test` / `pytest` 等命令——它们在这里不存在。
 
 ## 文件结构
 
-仓库根目录只有四个有效文件:
+仓库根目录主要应用与配置文件:
 
 - `index.html` — OpenAI 兼容接口的图片生成页面
 - `gemini.html` — Gemini 图片生成页面
 - `doubao.html` — 豆包(字节)图片生成页面
-- `CNAME` — GitHub Pages 自定义域名 `ai-image-generator.byhooi.tk`
+- `CNAME` — 旧 GitHub Pages 自定义域名文件;Cloudflare Pages 当前不依赖它,域名配置在 Cloudflare 控制台
 
 每个 HTML 文件都是**自包含的**:内联 CSS + 内联 JavaScript,不互相引用。
 
@@ -35,7 +35,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 本地预览:用浏览器直接打开 HTML 文件即可(双击或 `file://`),无需启动 dev server。涉及 CORS 时可起一个简易 http server。
 - API 凭证由用户在页面 UI 中填入,持久化在 `localStorage`(`img_gen_settings`、`img_gen_profiles`),不需要 `.env`。
 - 生成的历史图片放在 IndexedDB(`img-gen-gallery`)。
-- 部署:`git push` 到 `main` 后 GitHub Pages 自动发布,**无 CI 流水线**。
+- 部署:`git push` 到 `main` 后由 Cloudflare Pages 自动发布。Cloudflare Pages 构建命令保持为空,发布目录指向仓库根目录,项目配置在 Cloudflare 控制台维护。
 
 ## UI 改动验证
 
