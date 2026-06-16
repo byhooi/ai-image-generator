@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OpenAI 图片生成工具</title>
+    <title>豆包 Seedream 图片生成工具</title>
     <style>
         :root {
             color-scheme: dark;
@@ -802,9 +802,8 @@
     <div class="wrap">
         <!-- ============ 顶部 Tab ============ -->
         <div class="top-tabs">
-            <a class="top-tab active" href="index.html">OpenAI</a>
+            <a class="top-tab active" href="index.html">豆包</a>
             <a class="top-tab" href="gemini.html">Gemini</a>
-            <a class="top-tab" href="doubao.html">豆包</a>
             <div class="top-tab" data-page="gallery">图片展馆 <span id="topGalleryBadge"
                     style="font-size:12px;opacity:.7;"></span></div>
         </div>
@@ -812,8 +811,8 @@
         <!-- ============ 画图页 ============ -->
         <div id="tabDraw" class="tab-page active">
             <div class="card">
-                <h1>OpenAI 图片生成</h1>
-                <div class="sub">纯前端版：浏览器直连上游 API，支持文生图 & 图生图</div>
+                <h1>豆包 Seedream 图片生成</h1>
+                <div class="sub">火山方舟 Seedream：使用 /images/generations，浏览器直连可能受 CORS 限制</div>
 
                 <!-- ============ 左栏：输入 + 结果 ============ -->
                 <div class="main-panel">
@@ -821,7 +820,7 @@
                     <div class="setting-row3">
                         <div>
                             <label for="baseUrl">Base URL</label>
-                            <input id="baseUrl" placeholder="https://anyrouter.top" autocomplete="off" />
+                            <input id="baseUrl" placeholder="https://ark.cn-beijing.volces.com/api/v3" autocomplete="off" />
                         </div>
                         <div>
                             <label for="apiKey">API Key</label>
@@ -836,6 +835,16 @@
                                 <input id="model" placeholder="聚焦自动拉取模型列表" autocomplete="off" />
                                 <div id="modelPanel" class="combo-panel"></div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div class="setting-row">
+                        <div>
+                            <label for="imageSize">图片分辨率</label>
+                            <select id="imageSize">
+                                <option value="2K">2K</option>
+                                <option value="4K">4K</option>
+                            </select>
                         </div>
                     </div>
 
@@ -919,6 +928,7 @@
             baseUrl: $('#baseUrl'),
             model: $('#model'),
             modelPanel: $('#modelPanel'),
+            imageSize: $('#imageSize'),
             imageFile: $('#imageFile'),
             thumbRow: $('#thumbRow'),
             thumbAdd: $('#thumbAdd'),
@@ -946,7 +956,6 @@
 
         let resultDataUrl = null;
         let resultBlob = null;
-        const CODEX_CLI_VERSION = '0.133.0';
 
         // ========== 多图选择器 ==========
         let refImages = []; // { file, dataUrl, originalSize, compressedSize }
@@ -1088,6 +1097,7 @@
         function lockInputs() {
             els.prompt.disabled = true;
             els.model.disabled = true;
+            els.imageSize.disabled = true;
             els.thumbAdd.style.display = 'none';
             els.thumbRow.querySelectorAll('.thumb-remove').forEach((b) => { b.style.display = 'none'; });
         }
@@ -1095,6 +1105,7 @@
         function unlockInputs() {
             els.prompt.disabled = false;
             els.model.disabled = false;
+            els.imageSize.disabled = false;
             els.thumbAdd.style.display = '';
             els.thumbRow.querySelectorAll('.thumb-remove').forEach((b) => { b.style.display = ''; });
         }
@@ -1120,9 +1131,18 @@
         const modelCache = new Map();
         let modelIds = [];
         let activeModelIdx = -1;
+        let modelLoadMessage = '';
+        const DOUBAO_MIN_PIXELS = 3686400;
+        const DOUBAO_DEFAULT_SIZE = '2K';
+        const DOUBAO_ALLOWED_SIZE_LABELS = ['2K', '4K'];
+        const DOUBAO_DEFAULT_MODEL = 'doubao-seedream-4-5-251128';
+        const DOUBAO_FALLBACK_MODELS = [
+            'doubao-seedream-4-5-251128',
+            'doubao-seedream-5-0-260128',
+        ];
 
         // ========== 设置 localStorage ==========
-        const SAVED_KEY = 'img_gen_settings';
+        const SAVED_KEY = 'img_gen_settings_doubao';
         const CONFIGS_KEY = 'img_gen_profiles';
         const ACTIVE_CONFIG_KEY = 'img_gen_active_profile';
         function getCurrentConfigValues() {
@@ -1130,14 +1150,17 @@
                 baseUrl: els.baseUrl.value.trim(),
                 apiKey: els.apiKey.value.trim(),
                 model: els.model.value.trim(),
+                imageSize: els.imageSize.value,
             };
         }
 
         function applySettings(settings) {
-            els.baseUrl.value = settings?.baseUrl || 'https://api.openai.com';
+            els.baseUrl.value = settings?.baseUrl || 'https://ark.cn-beijing.volces.com/api/v3';
             els.apiKey.value = settings?.apiKey || '';
-            els.model.value = settings?.model || 'gpt-5.3-codex';
+            els.model.value = settings?.model || DOUBAO_DEFAULT_MODEL;
+            els.imageSize.value = normalizeDoubaoSize(settings?.imageSize || DOUBAO_DEFAULT_SIZE);
             modelIds = [];
+            modelLoadMessage = '';
             renderModelPanel();
         }
 
@@ -1189,8 +1212,47 @@
             return String(id || '').trim().replace(/^models\//, '');
         }
 
+        function uniqueModelIds(ids) {
+            return [...new Set(ids.map(normalizeModelId).filter(Boolean))];
+        }
+
+        function extractModelIds(data) {
+            const directList = Array.isArray(data?.data)
+                ? data.data
+                : Array.isArray(data?.models)
+                    ? data.models
+                    : Array.isArray(data?.items)
+                        ? data.items
+                        : Array.isArray(data)
+                            ? data
+                            : [];
+
+            return uniqueModelIds(directList.flatMap((item) => {
+                if (typeof item === 'string') return [item];
+                if (!item || typeof item !== 'object') return [];
+                return [item.id, item.name, item.model, item.model_id, item.endpoint_id];
+            }));
+        }
+
+        function normalizeDoubaoSize(size) {
+            const fallback = DOUBAO_DEFAULT_SIZE;
+            const rawSize = String(size || '').trim();
+            const label = rawSize.toUpperCase();
+            if (DOUBAO_ALLOWED_SIZE_LABELS.includes(label)) return label;
+
+            const match = rawSize.match(/^(\d+)x(\d+)$/i);
+            if (!match) return fallback;
+
+            const width = Number(match[1]);
+            const height = Number(match[2]);
+            if (!Number.isFinite(width) || !Number.isFinite(height) || width * height < DOUBAO_MIN_PIXELS) {
+                return fallback;
+            }
+            return `${width}x${height}`;
+        }
+
         // ========== 图片展馆 (IndexedDB) ==========
-        const DB_NAME = 'img-gen-gallery';
+        const DB_NAME = 'img-gen-gallery-doubao';
         const DB_VERSION = 1;
         let gallery = [];
 
@@ -1423,6 +1485,7 @@
         }
 
         // ========== 递归搜索 base64 ==========
+        // ========== Doubao Seedream payload and response parsing ==========
         function extractBase64AsDataUrl(dataObj) {
             if (dataObj == null) return null;
             if (Array.isArray(dataObj)) {
@@ -1431,14 +1494,10 @@
                     if (found) return found;
                 }
             } else if (typeof dataObj === 'object') {
-                for (const [key, value] of Object.entries(dataObj)) {
-                    if (
-                        ['result', 'partial_image_b64', 'image_b64', 'b64_json'].includes(key) &&
-                        typeof value === 'string' &&
-                        (value.startsWith('iVBOR') || value.startsWith('/9j/') || value.length > 1000)
-                    ) {
-                        return 'data:image/png;base64,' + value;
-                    }
+                if (typeof dataObj.b64_json === 'string') return 'data:image/png;base64,' + dataObj.b64_json;
+                if (typeof dataObj.base64 === 'string') return 'data:image/png;base64,' + dataObj.base64;
+                if (typeof dataObj.url === 'string') return dataObj.url;
+                for (const value of Object.values(dataObj)) {
                     const found = extractBase64AsDataUrl(value);
                     if (found) return found;
                 }
@@ -1446,129 +1505,25 @@
             return null;
         }
 
-        // ========== Codex CLI 风格请求 ==========
-        function randomId() {
-            try {
-                if (crypto?.randomUUID) return crypto.randomUUID();
-            } catch { }
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
-                const n = Math.floor(Math.random() * 16);
-                const v = ch === 'x' ? n : (n & 0x3) | 0x8;
-                return v.toString(16);
-            });
-        }
-
-        function randomHex(length) {
-            const bytes = new Uint8Array(Math.ceil(length / 2));
-            try {
-                crypto.getRandomValues(bytes);
-            } catch {
-                for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
-            }
-            return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').slice(0, length);
-        }
-
-        function uuidV7() {
-            const timestamp = Date.now().toString(16).padStart(12, '0').slice(-12);
-            const randA = randomHex(3);
-            const randB = randomHex(16);
-            const variantFirst = ((parseInt(randB[0], 16) & 0x3) | 0x8).toString(16);
-            const hex = `${timestamp}7${randA}${variantFirst}${randB.slice(1)}`;
-            return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-        }
-
-        function stableLocalId(storageKey) {
-            try {
-                const existing = localStorage.getItem(storageKey);
-                if (existing) return existing;
-                const id = randomId();
-                localStorage.setItem(storageKey, id);
-                return id;
-            } catch {
-                return randomId();
-            }
-        }
-
-        function makeCodexLikeIds() {
-            const threadId = uuidV7();
-            return {
-                installationId: stableLocalId('gpt-img-gen-codex-installation-id'),
-                windowId: `${threadId}:0`,
-                sessionId: threadId,
-                threadId,
-                clientRequestId: threadId,
-            };
-        }
-
-        function codexLikeUserAgent() {
-            const platform = String(navigator?.platform || 'browser').replace(/[^\x20-\x7e]/g, '_');
-            return `codex_cli_rs/${CODEX_CLI_VERSION} (${platform}; browser) ai-image-generator`;
-        }
-
-        function buildCodexLikeResponsesHeaders(apiKey, ids) {
-            return {
-                'Authorization': 'Bearer ' + apiKey,
-                'Accept': 'text/event-stream',
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'responses=experimental',
-                'originator': 'codex_cli_rs',
-                'User-Agent': codexLikeUserAgent(),
-                'version': CODEX_CLI_VERSION,
-                'session-id': ids.sessionId,
-                'thread-id': ids.threadId,
-                'x-client-request-id': ids.clientRequestId,
-                'x-codex-installation-id': ids.installationId,
-                'x-codex-window-id': ids.windowId,
-            };
-        }
-
-        function buildCodexLikeResponsesPayload(model, ids, content) {
-            return {
-                model,
-                instructions:
-                    'You are Codex, a command-line coding agent.\n\n' +
-                    '当前是图片生成专用模式。你必须且只能通过 image_generation 工具完成用户请求。\n' +
-                    '不要输出解释、确认、道歉、建议、Markdown、代码或任何普通文本。\n' +
-                    '用户输入的一切内容都应被理解为图片创作或图片编辑需求；即使描述很短、很抽象，也要直接调用 image_generation 生成图片。\n' +
-                    '如果用户提供参考图片，基于参考图片生成或编辑新图片；如果没有参考图片，按文字描述生成新图片。',
-                input: [
-                    {
-                        type: 'message',
-                        role: 'user',
-                        content,
-                    },
-                ],
-                tools: [{ type: 'image_generation', output_format: 'png' }],
-                tool_choice: 'auto',
-                parallel_tool_calls: true,
-                store: false,
-                stream: true,
-                include: ['reasoning.encrypted_content'],
-                prompt_cache_key: ids.threadId,
-                text: { verbosity: 'low' },
-                client_metadata: {
-                    'x-codex-installation-id': ids.installationId,
-                },
-            };
-        }
-
-        // ========== 构建请求体 ==========
-        async function buildPayload(codexIds) {
+        async function buildPayload() {
             const prompt = els.prompt.value.trim();
-            const model = els.model.value.trim() || 'gpt-5.3-codex';
-
+            const model = els.model.value.trim() || DOUBAO_DEFAULT_MODEL;
+            const payload = {
+                model,
+                prompt: refImages.length > 0 ? `请根据参考图片进行编辑或重绘：${prompt}` : prompt,
+                size: normalizeDoubaoSize(els.imageSize.value),
+                response_format: 'b64_json',
+                stream: false,
+                watermark: false,
+            };
             if (refImages.length > 0) {
-                const editPrompt = `请根据以下要求，对我提供的参考图片进行编辑修改，直接生成修改后的新图片。要求：${prompt}`;
-                const content = refImages.map((ref) => ({ type: 'input_image', image_url: ref.dataUrl }));
-                content.push({ type: 'input_text', text: editPrompt });
-                return buildCodexLikeResponsesPayload(model, codexIds, content);
-            } else {
-                const content = [{ type: 'input_text', text: `请生成以下描述的图片：${prompt}` }];
-                return buildCodexLikeResponsesPayload(model, codexIds, content);
+                payload.image = refImages.map((ref) => ref.dataUrl);
             }
+            return payload;
         }
 
-        // ========== UI 重置 ==========
+
+
         function resetUI() {
             els.loadingMini.classList.remove('active');
             els.eventLog.classList.remove('active');
@@ -1588,6 +1543,47 @@
         }
 
         // ========== 核心：发送请求 ==========
+        function buildProviderRequest(baseUrl, model, apiKey) {
+            return {
+                url: buildApiUrl(baseUrl, '/images/generations'),
+                headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+            };
+        }
+
+        function showGeneratedImage(dataUrl, prompt, startTime) {
+            resultDataUrl = dataUrl;
+            resultBlob = null;
+            let sizeStr = '远程图片';
+
+            if (dataUrl.startsWith('data:')) {
+                const [meta, b64] = dataUrl.split(',');
+                const mimeType = (meta.match(/^data:([^;]+)/) || [])[1] || 'image/png';
+                const byteChars = atob(b64);
+                const bytes = new Uint8Array(byteChars.length);
+                for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+                resultBlob = new Blob([bytes], { type: mimeType });
+                const sizeKB = (bytes.length / 1024).toFixed(1);
+                sizeStr = sizeKB > 1024 ? (sizeKB / 1024).toFixed(1) + ' MB' : sizeKB + ' KB';
+            }
+
+            stopTimer();
+            els.loadingMini.classList.remove('active');
+            els.resultImg.src = dataUrl;
+            els.resultArea.classList.add('active');
+            els.resultStats.textContent = `尺寸 ${els.resultImg.naturalWidth || '?'} x ${els.resultImg.naturalHeight || '?'}  ·  大小 ${sizeStr}  ·  用时 ${((Date.now() - startTime) / 1000).toFixed(1)}s`;
+            els.resultImg.onload = () => {
+                els.resultStats.textContent = `尺寸 ${els.resultImg.naturalWidth} x ${els.resultImg.naturalHeight}  ·  大小 ${sizeStr}  ·  用时 ${((Date.now() - startTime) / 1000).toFixed(1)}s`;
+            };
+            appendEvent('done', `图片已生成！大小: ${sizeStr}`);
+            unlockInputs();
+            els.genBtn.disabled = false;
+            els.genBtn.textContent = '重新生成';
+            const mode = refImages.length > 0 ? 2 : 1;
+            const refUrl = refImages.length > 0 ? refImages[0].dataUrl : null;
+            addToGallery(dataUrl, prompt, mode, refUrl, els.model.value);
+            clearRefImages();
+        }
+
         async function generate() {
             const apiKey = els.apiKey.value.trim();
             if (!apiKey) { alert('请填写 API Key'); return; }
@@ -1602,33 +1598,26 @@
             const prompt = els.prompt.value.trim();
             if (!prompt) { alert('请填写提示词'); return; }
 
-            // 保存设置供下次使用
             saveSettings();
 
-            const codexIds = makeCodexLikeIds();
             let payload;
-            try { payload = await buildPayload(codexIds); }
+            try { payload = await buildPayload(); }
             catch (e) { alert(e.message); return; }
 
-            // ====== UI 进入生成状态 ======
             resetUI();
             lockInputs();
             els.genBtn.disabled = true;
             els.genBtn.textContent = '生成中…';
             els.loadingMini.classList.add('active');
-            els.statEvents.textContent = '📡 事件: 0';
-            els.statTextLen.textContent = '📝 文本: 0 字';
+            els.statEvents.textContent = '事件: 0';
+            els.statTextLen.textContent = '文本: 0 字';
             startTimer();
 
-            const url = buildApiUrl(baseUrl, '/responses');
-            appendEvent('event', `开始请求 POST ${new URL(url).pathname}`);
-            const headers = buildCodexLikeResponsesHeaders(apiKey, codexIds);
-
-            let collectedText = [];
+            const requestInfo = buildProviderRequest(baseUrl, model, apiKey);
+            appendEvent('event', `开始请求 POST ${new URL(requestInfo.url).pathname}`);
 
             try {
-                const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
-
+                const response = await fetch(requestInfo.url, { method: 'POST', headers: requestInfo.headers, body: JSON.stringify(payload) });
                 if (!response.ok) {
                     let errText = '';
                     try { errText = await response.text(); } catch { }
@@ -1643,134 +1632,22 @@
                     return;
                 }
 
-                appendEvent('event', `HTTP ${response.status} — 连接成功，开始接收流…`);
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop();
-
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (!trimmed) continue;
-
-                        if (trimmed.startsWith('event: ')) {
-                            const eventName = trimmed.slice(7);
-                            if (eventName !== 'response.output_text.delta') {
-                                appendEvent('event', eventName);
-                            }
-                            continue;
-                        }
-
-                        if (trimmed.startsWith('data: ')) {
-                            const dataStr = trimmed.slice(6);
-                            if (dataStr === '[DONE]' || dataStr === '') continue;
-
-                            try {
-                                const data = JSON.parse(dataStr);
-
-                                // 提取并展示上游具体的错误信息
-                                if (data.error) {
-                                    const errMsg = data.error.message || JSON.stringify(data.error);
-                                    appendEvent('event', `🔴 错误详情: ${errMsg}`);
-                                    els.statusBar.className = 'status-bar err';
-                                    els.statusBar.textContent = `上游接口报错：${errMsg}`;
-                                }
-                                if (data.response && data.response.status === 'failed') {
-                                    const err = data.response.status_details?.error;
-                                    if (err) {
-                                        const errMsg = err.message || JSON.stringify(err);
-                                        appendEvent('event', `🔴 失败原因: ${errMsg}`);
-                                        els.statusBar.className = 'status-bar err';
-                                        els.statusBar.textContent = `生成失败：${errMsg}`;
-                                    }
-                                }
-
-                                const dataUrl = extractBase64AsDataUrl(data);
-                                if (dataUrl) {
-                                    resultDataUrl = dataUrl;
-
-                                    const b64 = dataUrl.split(',')[1];
-                                    const byteChars = atob(b64);
-                                    const bytes = new Uint8Array(byteChars.length);
-                                    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-                                    resultBlob = new Blob([bytes], { type: 'image/png' });
-
-                                    const sizeKB = (bytes.length / 1024).toFixed(1);
-                                    const sizeStr = sizeKB > 1024 ? (sizeKB / 1024).toFixed(1) + ' MB' : sizeKB + ' KB';
-
-                                    stopTimer();
-                                    els.loadingMini.classList.remove('active');
-
-                                    els.resultImg.src = dataUrl;
-                                    els.resultArea.classList.add('active');
-                                    els.resultStats.textContent = `📐 ${els.resultImg.naturalWidth || '?'} × ${els.resultImg.naturalHeight || '?'}  ·  💾 ${sizeStr}  ·  📡 ${eventCount} 个事件  ·  ⏱ ${((Date.now() - startTime) / 1000).toFixed(1)}s`;
-
-                                    els.resultImg.onload = () => {
-                                        els.resultStats.textContent = `📐 ${els.resultImg.naturalWidth} × ${els.resultImg.naturalHeight}  ·  💾 ${sizeStr}  ·  📡 ${eventCount} 个事件  ·  ⏱ ${((Date.now() - startTime) / 1000).toFixed(1)}s`;
-                                    };
-
-                                    appendEvent('done', `图片已抓取！大小: ${sizeStr}`);
-                                    unlockInputs();
-                                    els.genBtn.disabled = false;
-                                    els.genBtn.textContent = '重新生成';
-
-                                    // 添加到展馆
-                                    const mode = refImages.length > 0 ? 2 : 1;
-                                    const refUrl = refImages.length > 0 ? refImages[0].dataUrl : null;
-                                    addToGallery(dataUrl, prompt, mode, refUrl, els.model.value);
-                                    clearRefImages();
-                                    return;
-                                }
-
-                                const delta = data.delta;
-                                if (typeof delta === 'string' && delta) {
-                                    collectedText.push(delta);
-                                    els.textStream.classList.add('active');
-                                    els.textStream.textContent += delta;
-                                    els.textStream.scrollTop = els.textStream.scrollHeight;
-                                    els.statTextLen.textContent = `📝 文本: ${collectedText.join('').length} 字`;
-                                    if (collectedText.length % 5 === 1) {
-                                        appendEvent('text', `已接收 ${collectedText.length} 个 delta (累计 ${collectedText.join('').length} 字)`);
-                                    }
-                                }
-
-                                if (!data.delta && eventCount % 3 === 0) {
-                                    const keys = Object.keys(data).slice(0, 3).join(', ');
-                                    appendEvent('data', keys ? `{ ${keys}... }` : `[${typeof data}]`);
-                                }
-                            } catch { }
-                        }
-                    }
+                const data = await response.json();
+                appendEvent('data', '收到 JSON 响应');
+                const dataUrl = extractBase64AsDataUrl(data);
+                if (dataUrl) {
+                    showGeneratedImage(dataUrl, prompt, startTime);
+                    return;
                 }
 
-                // 流结束，没图片
                 stopTimer();
                 els.loadingMini.classList.remove('active');
                 unlockInputs();
                 els.genBtn.disabled = false;
                 els.genBtn.textContent = '重新生成';
-
-                appendEvent('event', '流已结束 — [DONE]');
-                if (collectedText.length) {
-                    const fullText = collectedText.join('');
-                    appendEvent('done', `模型返回 ${fullText.length} 字文本，未生成图片`);
-                    els.textStream.classList.add('active');
-                    els.textStream.textContent = fullText;
-                    els.statusBar.className = 'status-bar err';
-                    els.statusBar.textContent = '⚠️ 流式返回结束，没找到图片。模型选择了用文字回答而不是生成图片。提示：尝试更明确的描述，例如 "请编辑这张图片…"';
-                } else {
-                    appendEvent('done', '流结束，无图片无文本');
-                    els.statusBar.className = 'status-bar err';
-                    els.statusBar.textContent = '⚠️ 流式返回结束，未收到图片也没有文本内容。可能服务器未正确响应。';
-                }
+                els.statusBar.className = 'status-bar err';
+                els.statusBar.textContent = '响应成功，但未找到图片数据。请检查模型是否支持图片输出。';
+                appendEvent('done', '响应中未找到图片数据');
             } catch (err) {
                 stopTimer();
                 els.loadingMini.classList.remove('active');
@@ -1779,11 +1656,12 @@
                 els.genBtn.textContent = '重新生成';
                 appendEvent('event', `异常: ${err.message || err}`);
                 els.statusBar.className = 'status-bar err';
-                els.statusBar.textContent = '发生异常：' + (err.message || err);
+                els.statusBar.textContent = '发生异常：' + (err.message || err) + '\n提示：浏览器直连第三方 API 可能会被 CORS 拦截，必要时请使用后端代理。';
             }
         }
 
-        // ========== 下载 ==========
+
+
         function downloadFilename() {
             const d = new Date();
             const pad = (n) => String(n).padStart(2, '0');
@@ -1911,9 +1789,15 @@
             if (!modelIds.length) {
                 const empty = document.createElement('div');
                 empty.className = 'combo-empty';
-                empty.textContent = '聚焦自动加载模型列表，需先填 Base URL 和 API Key';
+                empty.textContent = modelLoadMessage || '聚焦自动加载模型列表，需先填 Base URL 和 API Key';
                 els.modelPanel.appendChild(empty);
                 return;
+            }
+            if (modelLoadMessage) {
+                const status = document.createElement('div');
+                status.className = 'combo-empty';
+                status.textContent = modelLoadMessage;
+                els.modelPanel.appendChild(status);
             }
             modelIds.forEach((id, i) => {
                 const item = document.createElement('div');
@@ -1934,32 +1818,54 @@
         async function loadModels() {
             let baseUrl;
             try { baseUrl = normalizeBaseUrl(els.baseUrl.value); }
-            catch { return; }
+            catch (e) {
+                modelIds = [];
+                modelLoadMessage = e.message;
+                renderModelPanel();
+                return;
+            }
             modelIds = [];
+            modelLoadMessage = '正在加载模型列表...';
             renderModelPanel();
             const firstKey = els.apiKey.value.trim();
-            if (!firstKey) return;
+            if (!firstKey) {
+                modelLoadMessage = '请先填写 API Key，再聚焦加载模型列表';
+                renderModelPanel();
+                return;
+            }
             const cacheKey = baseUrl + '::' + firstKey;
             if (modelCache.has(cacheKey)) {
                 modelIds = modelCache.get(cacheKey);
+                modelLoadMessage = modelIds.length ? '' : '模型列表为空，请检查当前 Key 是否有可用模型';
                 renderModelPanel();
                 return;
             }
             try {
                 const resp = await fetch(buildApiUrl(baseUrl, '/models'), {
-                    headers: { 'Authorization': 'Bearer ' + firstKey, 'Content-Type': 'application/json' },
+                    headers: { 'Authorization': 'Bearer ' + firstKey },
                 });
-                if (resp.ok) {
-                    const data = await resp.json();
-                    const allIds = Array.isArray(data?.data) ? data.data.map((m) => m?.id || m?.name).filter(Boolean) : [];
-                    modelIds = [...new Set(allIds.map(normalizeModelId).filter(Boolean))]
-                        .filter(id => {
-                            const l = id.toLowerCase();
-                            return l === 'gpt-5.3-codex' || l === 'gpt-5.5';
-                        });
-                    modelCache.set(cacheKey, modelIds);
+                if (!resp.ok) {
+                    let errText = '';
+                    try { errText = await resp.text(); } catch { }
+                    modelIds = DOUBAO_FALLBACK_MODELS;
+                    modelLoadMessage = `模型列表接口失败：HTTP ${resp.status}${errText ? '，已显示常用模型' : ''}`;
+                    renderModelPanel();
+                    return;
                 }
-            } catch { }
+
+                const data = await resp.json();
+                modelIds = extractModelIds(data);
+                if (!modelIds.length) {
+                    modelIds = DOUBAO_FALLBACK_MODELS;
+                    modelLoadMessage = '接口返回为空或结构不匹配，已显示常用模型';
+                } else {
+                    modelLoadMessage = '';
+                }
+                modelCache.set(cacheKey, modelIds);
+            } catch (e) {
+                modelIds = DOUBAO_FALLBACK_MODELS;
+                modelLoadMessage = `模型列表加载失败：${e.message || e}，已显示常用模型`;
+            }
             renderModelPanel();
         }
 
