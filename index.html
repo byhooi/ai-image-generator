@@ -1274,6 +1274,7 @@
             'doubao-seedream-3-0-240828',
             'doubao-seedream-3-0-i2i-240828',
         ];
+        const DOUBAO_OFFICIAL_HOST = 'ark.cn-beijing.volces.com';
 
         // ========== 设置 localStorage ==========
         const SAVED_KEY = 'img_gen_settings_doubao';
@@ -1370,6 +1371,30 @@
                 if (!item || typeof item !== 'object') return [];
                 return [item.id, item.name, item.model, item.model_id, item.endpoint_id];
             }));
+        }
+
+        function isOfficialDoubaoBaseUrl(baseUrl) {
+            try {
+                return new URL(baseUrl).hostname.toLowerCase() === DOUBAO_OFFICIAL_HOST;
+            } catch {
+                return false;
+            }
+        }
+
+        function summarizeModelError(status, errText) {
+            if (status === 401 || status === 403) {
+                return `API Key 无效、已过期或没有模型权限（HTTP ${status}）。已显示常用模型。`;
+            }
+            if (status === 404) {
+                return '当前 Base URL 不支持模型列表接口（HTTP 404）。请手动填写已开通的模型或推理接入点 ID。';
+            }
+            let detail = '';
+            try {
+                const data = JSON.parse(errText);
+                detail = data?.error?.message || data?.message || '';
+            } catch { }
+            detail = String(detail || errText || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+            return `模型列表接口失败（HTTP ${status}）${detail ? '：' + detail : ''}。已显示常用模型。`;
         }
 
         function normalizeDoubaoSize(size) {
@@ -2223,6 +2248,14 @@
                 renderPromptModelPanel();
                 return;
             }
+            if (isOfficialDoubaoBaseUrl(baseUrl)) {
+                modelIds = DOUBAO_FALLBACK_MODELS;
+                promptModelIds = DOUBAO_PROMPT_FALLBACK_MODELS;
+                modelLoadMessage = '火山方舟官方地址不提供可靠的模型列表接口，已显示常用 Seedream 模型。请确认已开通对应模型；自定义推理接入点可直接填写 ID。';
+                renderModelPanel();
+                renderPromptModelPanel();
+                return;
+            }
             const cacheKey = baseUrl + '::' + firstKey;
             if (modelCache.has(cacheKey)) {
                 const cached = modelCache.get(cacheKey);
@@ -2246,7 +2279,7 @@
                     try { errText = await resp.text(); } catch { }
                     modelIds = DOUBAO_FALLBACK_MODELS;
                     promptModelIds = DOUBAO_PROMPT_FALLBACK_MODELS;
-                    modelLoadMessage = `模型列表接口失败：HTTP ${resp.status}${errText ? '，已显示常用模型' : ''}`;
+                    modelLoadMessage = summarizeModelError(resp.status, errText);
                     renderModelPanel();
                     renderPromptModelPanel();
                     return;
@@ -2268,7 +2301,7 @@
             } catch (e) {
                 modelIds = DOUBAO_FALLBACK_MODELS;
                 promptModelIds = DOUBAO_PROMPT_FALLBACK_MODELS;
-                modelLoadMessage = `模型列表加载失败：${e.message || e}，已显示常用模型`;
+                modelLoadMessage = `模型列表加载失败：${e.message || e}。可能是网络异常或跨域（CORS）拦截；已显示常用模型。`;
             }
             renderModelPanel();
             renderPromptModelPanel();
