@@ -926,7 +926,7 @@
                         <div>
                             <label for="model">生图模型 (Image Model)</label>
                             <div class="combo">
-                                <input id="model" placeholder="聚焦自动拉取模型列表" autocomplete="off" />
+                                <input id="model" placeholder="选择 Gemini 生图模型" autocomplete="off" />
                                 <div id="modelPanel" class="combo-panel"></div>
                             </div>
                         </div>
@@ -936,7 +936,7 @@
                         <div>
                             <label for="promptModel">提示词模型（选填，用于AI润色扩写）</label>
                             <div class="combo">
-                                <input id="promptModel" placeholder="默认推荐 gemini-3.8-flash，聚焦可拉取模型列表选择" autocomplete="off" />
+                                <input id="promptModel" placeholder="选择 Gemini 提示词模型" autocomplete="off" />
                                 <div id="promptModelPanel" class="combo-panel"></div>
                             </div>
                         </div>
@@ -1247,7 +1247,6 @@
         });
 
         // ========== Model 下拉状态 ==========
-        const modelCache = new Map();
         let modelIds = [];
         let activeModelIdx = -1;
         let promptModelIds = [];
@@ -1257,22 +1256,19 @@
             'gemini-3-pro-image',
             'gemini-nano-banana-2.1',
         ];
-        const DEPRECATED_GEMINI_IMAGE_MODELS = new Map([
-            ['gemini-3.1-flash-image-preview', 'gemini-3.1-flash-image'],
-            ['gemini-3-pro-image-preview', 'gemini-3-pro-image'],
-        ]);
-
         function resolveImageModelId(id) {
-            const raw = normalizeModelId(id);
-            const lower = raw.toLowerCase();
-            if (DEPRECATED_GEMINI_IMAGE_MODELS.has(lower)) {
-                return DEPRECATED_GEMINI_IMAGE_MODELS.get(lower);
-            }
-            return raw;
+            const normalized = normalizeModelId(id).toLowerCase();
+            return GEMINI_IMAGE_MODELS.find((model) => model.toLowerCase() === normalized) || GEMINI_IMAGE_MODELS[0];
+        }
+
+        function resolvePromptModelId(id) {
+            const normalized = normalizeModelId(id).toLowerCase();
+            return DEFAULT_PROMPT_MODELS.find((model) => model.toLowerCase() === normalized) || DEFAULT_PROMPT_MODELS[0];
         }
 
         function isImageModelId(id) {
-            return true; // 彻底开放：支持任何官方与自定义中转生图模型
+            const normalized = normalizeModelId(id).toLowerCase();
+            return GEMINI_IMAGE_MODELS.some((model) => model.toLowerCase() === normalized);
         }
 
         // ========== 设置 localStorage ==========
@@ -1292,7 +1288,7 @@
             els.baseUrl.value = settings?.baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
             els.apiKey.value = settings?.apiKey || '';
             els.model.value = settings?.model ? resolveImageModelId(settings.model) : 'gemini-3-pro-image';
-            els.promptModel.value = settings?.promptModel || 'gemini-3.8-flash';
+            els.promptModel.value = resolvePromptModelId(settings?.promptModel);
             modelIds = [];
             promptModelIds = [];
             renderModelPanel();
@@ -1754,10 +1750,10 @@
             try { baseUrl = normalizeBaseUrl(els.baseUrl.value); }
             catch (e) { alert(e.message); return; }
 
-            const model = resolveImageModelId(els.model.value);
-            if (!model) { alert('请填写或选择 Model'); return; }
+            const model = normalizeModelId(els.model.value);
             if (!isImageModelId(model)) {
-                appendEvent('event', '提示：当前使用的模型 "' + model + '" 非官方默认列表，尝试直接调用');
+                alert('请从列表中选择 Gemini 生图模型');
+                return;
             }
             els.model.value = model;
 
@@ -2061,9 +2057,9 @@
             let optimizedResult = '';
 
             if (apiKey) {
-                // 优先使用用户选择或输入的提示词模型
-                const customPromptModel = els.promptModel.value.trim();
-                const candidateModels = [customPromptModel, DEFAULT_PROMPT_MODELS[0], els.model.value.trim()].filter(Boolean);
+                // 仅使用固定的 Gemini 提示词模型
+                const customPromptModel = resolvePromptModelId(els.promptModel.value);
+                const candidateModels = [customPromptModel];
                 for (const m of candidateModels) {
                     try {
                         const modelPath = m.startsWith('models/') ? m : 'models/' + m;
@@ -2163,54 +2159,9 @@
         function openPromptModelPanel(filterText = '') { activePromptModelIdx = -1; renderPromptModelPanel(filterText); els.promptModelPanel.classList.add('open'); }
         function closePromptModelPanel() { els.promptModelPanel.classList.remove('open'); }
 
-        async function loadModels() {
-            let baseUrl;
-            try { baseUrl = normalizeBaseUrl(els.baseUrl.value); }
-            catch { return; }
-            const firstKey = els.apiKey.value.trim();
-            if (!firstKey) return;
-            const cacheKey = baseUrl + '::' + firstKey;
-            if (modelCache.has(cacheKey)) {
-                const cached = modelCache.get(cacheKey);
-                modelIds = cached.imageModels;
-                promptModelIds = cached.promptModels;
-                renderModelPanel();
-                renderPromptModelPanel();
-                return;
-            }
-            try {
-                const resp = await fetch(baseUrl + '/models', {
-                    headers: { 'x-goog-api-key': firstKey, 'Content-Type': 'application/json' },
-                });
-                if (resp.ok) {
-                    const data = await resp.json();
-                    const rawModels = Array.isArray(data?.models)
-                        ? data.models
-                        : Array.isArray(data?.data)
-                            ? data.data
-                            : [];
-                    const allIds = rawModels.map((m) => (typeof m === 'string' ? m : (m?.name || m?.id))).filter(Boolean);
-                    const normalized = allIds.map(normalizeModelId).filter(Boolean);
-
-                    // 生图模型列表：接口返回的所有模型全部放入，常用生图模型置顶
-                    const matchedPreferred = GEMINI_IMAGE_MODELS.filter((id) => normalized.includes(id));
-                    const otherImg = normalized.filter((id) => !GEMINI_IMAGE_MODELS.includes(id));
-                    modelIds = normalized.length > 0 ? [...matchedPreferred, ...otherImg] : GEMINI_IMAGE_MODELS;
-
-                    // 提示词文本模型列表（优先展示适合文本推理的 flash/pro 模型）
-                    const preferredPrompt = DEFAULT_PROMPT_MODELS.filter((id) => normalized.includes(id));
-                    const otherPrompt = normalized.filter((id) => !DEFAULT_PROMPT_MODELS.includes(id));
-                    promptModelIds = preferredPrompt.length > 0 ? [...preferredPrompt, ...otherPrompt] : (normalized.length > 0 ? normalized : DEFAULT_PROMPT_MODELS);
-
-                    modelCache.set(cacheKey, { imageModels: modelIds, promptModels: promptModelIds });
-                } else {
-                    modelIds = GEMINI_IMAGE_MODELS;
-                    promptModelIds = DEFAULT_PROMPT_MODELS;
-                }
-            } catch {
-                modelIds = GEMINI_IMAGE_MODELS;
-                promptModelIds = DEFAULT_PROMPT_MODELS;
-            }
+        function loadModels() {
+            modelIds = GEMINI_IMAGE_MODELS;
+            promptModelIds = DEFAULT_PROMPT_MODELS;
             renderModelPanel();
             renderPromptModelPanel();
         }
@@ -2220,7 +2171,10 @@
         els.model.addEventListener('focus', () => { openModelPanel(); loadModels(); });
         els.model.addEventListener('click', () => { if (!els.modelPanel.classList.contains('open')) { openModelPanel(); loadModels(); } });
         els.model.addEventListener('input', () => { openModelPanel(els.model.value); });
-        els.model.addEventListener('change', saveSettings);
+        els.model.addEventListener('change', () => {
+            els.model.value = resolveImageModelId(els.model.value);
+            saveSettings();
+        });
         els.model.addEventListener('keydown', (e) => {
             const items = els.modelPanel.querySelectorAll('.combo-item');
             if (e.key === 'ArrowDown') { e.preventDefault(); activeModelIdx = Math.min(items.length - 1, activeModelIdx + 1); renderModelPanel(); }
@@ -2234,7 +2188,10 @@
         els.promptModel.addEventListener('focus', () => { openPromptModelPanel(); loadModels(); });
         els.promptModel.addEventListener('click', () => { if (!els.promptModelPanel.classList.contains('open')) { openPromptModelPanel(); loadModels(); } });
         els.promptModel.addEventListener('input', () => { openPromptModelPanel(els.promptModel.value); });
-        els.promptModel.addEventListener('change', saveSettings);
+        els.promptModel.addEventListener('change', () => {
+            els.promptModel.value = resolvePromptModelId(els.promptModel.value);
+            saveSettings();
+        });
         els.promptModel.addEventListener('keydown', (e) => {
             const items = els.promptModelPanel.querySelectorAll('.combo-item');
             if (e.key === 'ArrowDown') { e.preventDefault(); activePromptModelIdx = Math.min(items.length - 1, activePromptModelIdx + 1); renderPromptModelPanel(); }
