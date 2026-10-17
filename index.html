@@ -142,6 +142,100 @@
             background: #374151;
         }
 
+        /* ====== 提示词增强与操作栏 ====== */
+        .prompt-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .prompt-header label {
+            margin-bottom: 0;
+        }
+
+        .prompt-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .prompt-counter {
+            font-size: 12px;
+            color: #64748b;
+            margin-right: 2px;
+        }
+
+        .action-link-btn {
+            background: none;
+            border: 1px solid #374151;
+            color: #93c5fd;
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all .15s ease;
+            white-space: nowrap;
+        }
+
+        .action-link-btn:hover {
+            background: #1e3a5f;
+            color: #fff;
+            border-color: #3b82f6;
+        }
+
+        .action-link-btn.loading {
+            opacity: .7;
+            cursor: wait;
+        }
+
+        .prompt-chips {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+
+        .chip-label {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .prompt-chip {
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            color: #94a3b8;
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all .15s ease;
+        }
+
+        .prompt-chip:hover {
+            background: #1e293b;
+            color: #e2e8f0;
+            border-color: #3b82f6;
+        }
+
+        .gen-btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .cancel-btn {
+            background: #b91c1c !important;
+            color: #fff !important;
+            padding: 10px 18px;
+            min-width: 90px;
+        }
+
+        .cancel-btn:hover {
+            background: #991b1b !important;
+        }
+
         /* ====== 左栏 ====== */
         .main-panel {
             min-width: 0;
@@ -846,6 +940,13 @@
                                 <option value="4K">4K</option>
                             </select>
                         </div>
+                        <div>
+                            <label for="promptModel">提示词模型（选填，用于AI润色扩写）</label>
+                            <div class="combo">
+                                <input id="promptModel" placeholder="留空默认，聚焦可拉取模型列表选择" autocomplete="off" />
+                                <div id="promptModelPanel" class="combo-panel"></div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 参考图片选择器（多图） -->
@@ -858,11 +959,31 @@
                     </div>
 
                     <div>
-                        <label for="prompt">图片描述（提示词）</label>
+                        <div class="prompt-header">
+                            <label for="prompt">图片描述（提示词）</label>
+                            <div class="prompt-actions">
+                                <span id="promptCounter" class="prompt-counter">0 字</span>
+                                <button id="optimizeBtn" type="button" class="action-link-btn" title="AI智能润色扩写提示词">✨ 优化提示词</button>
+                                <button id="revertBtn" type="button" class="action-link-btn" style="display:none;" title="恢复到优化前的提示词">↩ 撤回</button>
+                                <button id="clearPromptBtn" type="button" class="action-link-btn" title="清空提示词">清空</button>
+                            </div>
+                        </div>
+                        <div class="prompt-chips">
+                            <span class="chip-label">快捷风格：</span>
+                            <button type="button" class="prompt-chip" data-style="写实摄影，8k分辨率，真实细节，专业单反，自然光影">写实摄影</button>
+                            <button type="button" class="prompt-chip" data-style="唯美动漫二次元，新海诚美学，清透光影，色彩鲜艳，细腻插画">唯美动漫</button>
+                            <button type="button" class="prompt-chip" data-style="赛博朋克风，未来科技感，霓虹夜景，雨夜反光，机械质感">赛博朋克</button>
+                            <button type="button" class="prompt-chip" data-style="国风古韵水墨画，古典意境，水墨晕染，诗意留白">国风水墨</button>
+                            <button type="button" class="prompt-chip" data-style="3D粘土盲盒，泡泡玛特Q版风格，柔和三点光照，哑光材质，超可爱">3D盲盒</button>
+                            <button type="button" class="prompt-chip" data-style="电影大片质感，宽银幕构图，35mm胶片，电影级戏剧光影">电影质感</button>
+                        </div>
                         <textarea id="prompt" placeholder="例如：一只在雨中奔跑的柴犬，皮克斯动画风格"></textarea>
                     </div>
 
-                    <button id="genBtn" style="margin-top:10px; width:100%;">生成图片</button>
+                    <div class="gen-btn-group">
+                        <button id="genBtn" style="flex:1;">生成图片</button>
+                        <button id="cancelBtn" type="button" class="secondary cancel-btn" style="display:none;">取消生成</button>
+                    </div>
 
                     <div id="resultArea" class="result-area">
                         <img id="resultImg" alt="生成的图片" />
@@ -928,12 +1049,20 @@
             baseUrl: $('#baseUrl'),
             model: $('#model'),
             modelPanel: $('#modelPanel'),
+            promptModel: $('#promptModel'),
+            promptModelPanel: $('#promptModelPanel'),
             imageSize: $('#imageSize'),
             imageFile: $('#imageFile'),
             thumbRow: $('#thumbRow'),
             thumbAdd: $('#thumbAdd'),
             prompt: $('#prompt'),
+            promptCounter: $('#promptCounter'),
+            optimizeBtn: $('#optimizeBtn'),
+            revertBtn: $('#revertBtn'),
+            clearPromptBtn: $('#clearPromptBtn'),
+            promptChips: $('.prompt-chip'),
             genBtn: $('#genBtn'),
+            cancelBtn: $('#cancelBtn'),
             loadingMini: $('#loadingMini'),
             statEvents: $('#statEvents'),
             statTextLen: $('#statTextLen'),
@@ -1139,6 +1268,8 @@
         const DOUBAO_FALLBACK_MODELS = [
             'doubao-seedream-4-5-251128',
             'doubao-seedream-5-0-260128',
+            'doubao-seedream-3-0-240828',
+            'doubao-seedream-3-0-i2i-240828',
         ];
 
         // ========== 设置 localStorage ==========
@@ -1151,6 +1282,7 @@
                 apiKey: els.apiKey.value.trim(),
                 model: els.model.value.trim(),
                 imageSize: els.imageSize.value,
+                promptModel: els.promptModel.value.trim(),
             };
         }
 
@@ -1159,9 +1291,12 @@
             els.apiKey.value = settings?.apiKey || '';
             els.model.value = settings?.model || DOUBAO_DEFAULT_MODEL;
             els.imageSize.value = normalizeDoubaoSize(settings?.imageSize || DOUBAO_DEFAULT_SIZE);
+            els.promptModel.value = settings?.promptModel || '';
             modelIds = [];
+            promptModelIds = [];
             modelLoadMessage = '';
             renderModelPanel();
+            renderPromptModelPanel();
         }
 
         function loadSettings() {
@@ -1309,11 +1444,39 @@
             } catch { }
         }
 
+        // ========== 轻量缩略图生成（降低展馆内存占用） ==========
+        async function createThumbnailDataUrl(dataUrl, maxSide = 320, quality = 0.7) {
+            if (!dataUrl || !dataUrl.startsWith('data:image/')) return dataUrl;
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+                    const w = Math.max(1, Math.round(img.width * scale));
+                    const h = Math.max(1, Math.round(img.height * scale));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    resolve(canvas.toDataURL('image/jpeg', quality));
+                };
+                img.onerror = () => resolve(dataUrl);
+                img.src = dataUrl;
+            });
+        }
+
         async function addToGallery(dataUrl, prompt, mode, refDataUrl, model) {
             const id = Date.now();
+            let thumbDataUrl = null;
+            try {
+                thumbDataUrl = await createThumbnailDataUrl(dataUrl);
+            } catch {
+                thumbDataUrl = dataUrl;
+            }
             const record = {
                 id,
                 dataUrl,
+                thumbDataUrl: thumbDataUrl || dataUrl,
                 prompt,
                 mode,
                 model: normalizeModelId(model) || '模型未记录',
@@ -1350,9 +1513,10 @@
                 const thumbWrap = document.createElement('div');
                 thumbWrap.className = 'thumb-wrap';
                 const img = document.createElement('img');
-                img.src = r.dataUrl;
+                img.src = r.thumbDataUrl || r.dataUrl;
                 img.alt = '生成的图片';
                 img.loading = 'lazy';
+                img.title = '点击查看大图';
                 img.addEventListener('click', () => {
                     resultDataUrl = r.dataUrl;
                     openPreview();
@@ -1524,7 +1688,19 @@
 
 
 
+        let currentAbortController = null;
+        let requestTimeoutId = null;
+
         function resetUI() {
+            if (requestTimeoutId) {
+                clearTimeout(requestTimeoutId);
+                requestTimeoutId = null;
+            }
+            if (currentAbortController) {
+                currentAbortController.abort();
+                currentAbortController = null;
+            }
+            els.cancelBtn.style.display = 'none';
             els.loadingMini.classList.remove('active');
             els.eventLog.classList.remove('active');
             els.eventLog.innerHTML = '';
@@ -1541,6 +1717,26 @@
             eventCount = 0;
             stopTimer();
         }
+
+        els.cancelBtn.addEventListener('click', () => {
+            if (currentAbortController) {
+                currentAbortController.abort('用户手动取消');
+                currentAbortController = null;
+            }
+            if (requestTimeoutId) {
+                clearTimeout(requestTimeoutId);
+                requestTimeoutId = null;
+            }
+            stopTimer();
+            els.loadingMini.classList.remove('active');
+            unlockInputs();
+            els.genBtn.disabled = false;
+            els.genBtn.textContent = '重新生成';
+            els.cancelBtn.style.display = 'none';
+            appendEvent('event', '用户已主动取消图片生成');
+            els.statusBar.className = 'status-bar info';
+            els.statusBar.textContent = '已取消当前图片生成请求。';
+        });
 
         // ========== 核心：发送请求 ==========
         function buildProviderRequest(baseUrl, model, apiKey) {
@@ -1616,8 +1812,21 @@
             const requestInfo = buildProviderRequest(baseUrl, model, apiKey);
             appendEvent('event', `开始请求 POST ${new URL(requestInfo.url).pathname}`);
 
+            currentAbortController = new AbortController();
+            els.cancelBtn.style.display = 'inline-block';
+            requestTimeoutId = setTimeout(() => {
+                if (currentAbortController) {
+                    currentAbortController.abort('生成超时 (120秒)');
+                }
+            }, 120000);
+
             try {
-                const response = await fetch(requestInfo.url, { method: 'POST', headers: requestInfo.headers, body: JSON.stringify(payload) });
+                const response = await fetch(requestInfo.url, {
+                    method: 'POST',
+                    headers: requestInfo.headers,
+                    body: JSON.stringify(payload),
+                    signal: currentAbortController.signal
+                });
                 if (!response.ok) {
                     let errText = '';
                     try { errText = await response.text(); } catch { }
@@ -1636,10 +1845,14 @@
                 appendEvent('data', '收到 JSON 响应');
                 const dataUrl = extractBase64AsDataUrl(data);
                 if (dataUrl) {
+                    els.cancelBtn.style.display = 'none';
+                    if (requestTimeoutId) clearTimeout(requestTimeoutId);
                     showGeneratedImage(dataUrl, prompt, startTime);
                     return;
                 }
 
+                els.cancelBtn.style.display = 'none';
+                if (requestTimeoutId) clearTimeout(requestTimeoutId);
                 stopTimer();
                 els.loadingMini.classList.remove('active');
                 unlockInputs();
@@ -1649,11 +1862,21 @@
                 els.statusBar.textContent = '响应成功，但未找到图片数据。请检查模型是否支持图片输出。';
                 appendEvent('done', '响应中未找到图片数据');
             } catch (err) {
+                els.cancelBtn.style.display = 'none';
+                if (requestTimeoutId) clearTimeout(requestTimeoutId);
                 stopTimer();
                 els.loadingMini.classList.remove('active');
                 unlockInputs();
                 els.genBtn.disabled = false;
                 els.genBtn.textContent = '重新生成';
+
+                if (err.name === 'AbortError') {
+                    appendEvent('event', '请求已中断: ' + (err.message || '用户取消或超时'));
+                    els.statusBar.className = 'status-bar info';
+                    els.statusBar.textContent = '已取消当前图片生成请求。';
+                    return;
+                }
+
                 appendEvent('event', `异常: ${err.message || err}`);
                 els.statusBar.className = 'status-bar err';
                 els.statusBar.textContent = '发生异常：' + (err.message || err) + '\n提示：浏览器直连第三方 API 可能会被 CORS 拦截，必要时请使用后端代理。';
@@ -1779,33 +2002,163 @@
         els.editBtn.addEventListener('click', editCurrentImage);
         els.downloadBtn.addEventListener('click', download);
         els.copyBtn.addEventListener('click', copyImage);
+        // ========== 提示词辅助与 AI 优化 ==========
+        let lastOriginalPrompt = '';
+
+        function updatePromptCounter() {
+            const count = (els.prompt.value || '').length;
+            els.promptCounter.textContent = count + ' 字';
+        }
+
+        els.prompt.addEventListener('input', updatePromptCounter);
+
+        // 快捷风格标签点击追加
+        els.promptChips.forEach((chip) => {
+            chip.addEventListener('click', () => {
+                const style = chip.dataset.style;
+                const cur = els.prompt.value.trim();
+                if (!cur) {
+                    els.prompt.value = style;
+                } else if (!cur.includes(style)) {
+                    els.prompt.value = cur + '，' + style;
+                }
+                updatePromptCounter();
+                els.prompt.focus();
+            });
+        });
+
+        // 清空提示词（保留原词以便撤回）
+        els.clearPromptBtn.addEventListener('click', () => {
+            const cur = els.prompt.value.trim();
+            if (cur) {
+                lastOriginalPrompt = els.prompt.value;
+                els.revertBtn.style.display = 'inline-block';
+                els.revertBtn.title = '恢复清空前的内容';
+            }
+            els.prompt.value = '';
+            updatePromptCounter();
+            els.prompt.focus();
+        });
+
+        // 撤回恢复原词
+        els.revertBtn.addEventListener('click', () => {
+            if (lastOriginalPrompt) {
+                els.prompt.value = lastOriginalPrompt;
+                els.revertBtn.style.display = 'none';
+                updatePromptCounter();
+                els.statusBar.className = 'status-bar info';
+                els.statusBar.textContent = '已恢复优化前的原提示词。';
+            }
+        });
+
+        // 本地规则扩写兜底引擎
+        function localEnhancePrompt(raw) {
+            const qualityKeywords = ['大师杰作', '极致细节', '8K超高清', '景深光影', '精美构图', '逼真质感', '层次丰富', '细腻光照'];
+            const missing = qualityKeywords.filter((k) => !raw.includes(k)).slice(0, 4);
+            return missing.length ? raw + '，' + missing.join('，') : raw;
+        }
+
+        // AI 提示词优化调用（优先尝试兼容聊天端点，失败平滑降级为生图增强）
+        async function optimizePrompt() {
+            const raw = els.prompt.value.trim();
+            if (!raw) {
+                alert('请先输入简单的画面描述（如：一只在竹林里奔跑的熊猫），再点击优化。');
+                els.prompt.focus();
+                return;
+            }
+
+            const apiKey = els.apiKey.value.trim();
+            let baseUrl = '';
+            try {
+                baseUrl = normalizeBaseUrl(els.baseUrl.value);
+            } catch {
+                baseUrl = 'https://ark.cn-beijing.volces.com/api/v3';
+            }
+
+            lastOriginalPrompt = els.prompt.value;
+            els.optimizeBtn.disabled = true;
+            els.optimizeBtn.classList.add('loading');
+            els.optimizeBtn.textContent = '优化中…';
+            els.statusBar.className = 'status-bar info';
+            els.statusBar.textContent = '正在通过 AI 润色扩写提示词，请稍候…';
+
+            const optimizePromptText = '你是一位顶级 AI 绘画提示词专家。请根据用户的简要描述，扩写润色为富有画面细节、光影氛围、质感层次与高美感的生图提示词。' +
+                '\n\n【严格要求】' +
+                '\n1. 直接输出优化后的中文生图提示词正文，不要有任何前言、解释、分析、引号或问候语。' +
+                '\n2. 保持用户原有核心主体不变，合理拓展构图、光照、色彩、背景环境与画面质感。' +
+                '\n\n用户描述：' + raw;
+
+            let optimizedResult = '';
+
+            if (apiKey) {
+                try {
+                    const chosenModel = els.promptModel.value.trim() || els.model.value.trim() || 'doubao-1.5-pro';
+                    const chatUrl = buildApiUrl(baseUrl, '/chat/completions');
+                    const resp = await fetch(chatUrl, {
+                        method: 'POST',
+                        headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model: chosenModel,
+                            messages: [
+                                { role: 'user', content: optimizePromptText }
+                            ],
+                            temperature: 0.7
+                        })
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        const text = data?.choices?.[0]?.message?.content;
+                        if (text && text.trim()) {
+                            optimizedResult = text.trim();
+                        }
+                    }
+                } catch { }
+            }
+
+            if (!optimizedResult) {
+                optimizedResult = localEnhancePrompt(raw);
+                els.statusBar.textContent = '已使用生图美学增强引擎完成优化！可点击【撤回】还原。';
+            } else {
+                els.statusBar.className = 'status-bar done';
+                els.statusBar.textContent = '✨ AI 提示词优化完成！可点击【撤回】还原。';
+            }
+
+            els.prompt.value = optimizedResult;
+            updatePromptCounter();
+            els.revertBtn.style.display = 'inline-block';
+            els.optimizeBtn.disabled = false;
+            els.optimizeBtn.classList.remove('loading');
+            els.optimizeBtn.textContent = '✨ 优化提示词';
+        }
+
+        els.optimizeBtn.addEventListener('click', optimizePrompt);
+
         els.prompt.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') generate();
         });
 
-        // ========== Model 下拉（聚焦时拉取模型列表） ==========
+        // ========== Model & 提示词模型 下拉（聚焦时自动从接口拉取模型列表） ==========
+        let promptModelIds = [];
+        let activePromptModelIdx = -1;
+        const DOUBAO_PROMPT_FALLBACK_MODELS = ['doubao-1.5-pro', 'doubao-1.5-lite'];
+
         function renderModelPanel() {
             els.modelPanel.innerHTML = '';
-            if (!modelIds.length) {
-                const empty = document.createElement('div');
-                empty.className = 'combo-empty';
-                empty.textContent = modelLoadMessage || '聚焦自动加载模型列表，需先填 Base URL 和 API Key';
-                els.modelPanel.appendChild(empty);
-                return;
-            }
+            const list = modelIds.length ? modelIds : DOUBAO_FALLBACK_MODELS;
             if (modelLoadMessage) {
                 const status = document.createElement('div');
                 status.className = 'combo-empty';
                 status.textContent = modelLoadMessage;
                 els.modelPanel.appendChild(status);
             }
-            modelIds.forEach((id, i) => {
+            list.forEach((id, i) => {
                 const item = document.createElement('div');
                 item.className = 'combo-item' + (i === activeModelIdx ? ' active' : '');
                 item.textContent = id;
                 item.addEventListener('mousedown', (e) => {
                     e.preventDefault();
                     els.model.value = id;
+                    saveSettings();
                     closeModelPanel();
                 });
                 els.modelPanel.appendChild(item);
@@ -1815,31 +2168,65 @@
         function openModelPanel() { activeModelIdx = -1; renderModelPanel(); els.modelPanel.classList.add('open'); }
         function closeModelPanel() { els.modelPanel.classList.remove('open'); }
 
+        function renderPromptModelPanel() {
+            els.promptModelPanel.innerHTML = '';
+            const list = promptModelIds.length ? promptModelIds : DOUBAO_PROMPT_FALLBACK_MODELS;
+            if (!list.length) {
+                const empty = document.createElement('div');
+                empty.className = 'combo-empty';
+                empty.textContent = modelLoadMessage || '聚焦自动加载模型列表，需先填 Base URL 和 API Key';
+                els.promptModelPanel.appendChild(empty);
+                return;
+            }
+            list.forEach((id, i) => {
+                const item = document.createElement('div');
+                item.className = 'combo-item' + (i === activePromptModelIdx ? ' active' : '');
+                item.textContent = id;
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    els.promptModel.value = id;
+                    saveSettings();
+                    closePromptModelPanel();
+                });
+                els.promptModelPanel.appendChild(item);
+            });
+        }
+
+        function openPromptModelPanel() { activePromptModelIdx = -1; renderPromptModelPanel(); els.promptModelPanel.classList.add('open'); }
+        function closePromptModelPanel() { els.promptModelPanel.classList.remove('open'); }
+
         async function loadModels() {
             let baseUrl;
             try { baseUrl = normalizeBaseUrl(els.baseUrl.value); }
             catch (e) {
                 modelIds = [];
+                promptModelIds = [];
                 modelLoadMessage = e.message;
                 renderModelPanel();
+                renderPromptModelPanel();
                 return;
             }
-            modelIds = [];
-            modelLoadMessage = '正在加载模型列表...';
-            renderModelPanel();
             const firstKey = els.apiKey.value.trim();
             if (!firstKey) {
                 modelLoadMessage = '请先填写 API Key，再聚焦加载模型列表';
                 renderModelPanel();
+                renderPromptModelPanel();
                 return;
             }
             const cacheKey = baseUrl + '::' + firstKey;
             if (modelCache.has(cacheKey)) {
-                modelIds = modelCache.get(cacheKey);
+                const cached = modelCache.get(cacheKey);
+                modelIds = cached.imageModels;
+                promptModelIds = cached.promptModels;
                 modelLoadMessage = modelIds.length ? '' : '模型列表为空，请检查当前 Key 是否有可用模型';
                 renderModelPanel();
+                renderPromptModelPanel();
                 return;
             }
+            modelLoadMessage = '正在加载模型列表...';
+            renderModelPanel();
+            renderPromptModelPanel();
+
             try {
                 const resp = await fetch(buildApiUrl(baseUrl, '/models'), {
                     headers: { 'Authorization': 'Bearer ' + firstKey },
@@ -1848,36 +2235,59 @@
                     let errText = '';
                     try { errText = await resp.text(); } catch { }
                     modelIds = DOUBAO_FALLBACK_MODELS;
+                    promptModelIds = DOUBAO_PROMPT_FALLBACK_MODELS;
                     modelLoadMessage = `模型列表接口失败：HTTP ${resp.status}${errText ? '，已显示常用模型' : ''}`;
                     renderModelPanel();
+                    renderPromptModelPanel();
                     return;
                 }
 
                 const data = await resp.json();
-                modelIds = extractModelIds(data);
-                if (!modelIds.length) {
+                const fetchedIds = extractModelIds(data);
+                if (!fetchedIds.length) {
                     modelIds = DOUBAO_FALLBACK_MODELS;
-                    modelLoadMessage = '接口返回为空或结构不匹配，已显示常用模型';
+                    promptModelIds = DOUBAO_PROMPT_FALLBACK_MODELS;
+                    modelLoadMessage = '接口返回为空或结构不匹配，已显示常用推荐模型';
                 } else {
+                    // 生图模型：将拉取到的全部模型与常用生图模型合并开放
+                    modelIds = uniqueModelIds([...DOUBAO_FALLBACK_MODELS, ...fetchedIds]);
+                    promptModelIds = uniqueModelIds([...DOUBAO_PROMPT_FALLBACK_MODELS, ...fetchedIds]);
                     modelLoadMessage = '';
                 }
-                modelCache.set(cacheKey, modelIds);
+                modelCache.set(cacheKey, { imageModels: modelIds, promptModels: promptModelIds });
             } catch (e) {
                 modelIds = DOUBAO_FALLBACK_MODELS;
+                promptModelIds = DOUBAO_PROMPT_FALLBACK_MODELS;
                 modelLoadMessage = `模型列表加载失败：${e.message || e}，已显示常用模型`;
             }
             renderModelPanel();
+            renderPromptModelPanel();
         }
 
+        // 生图模型事件
         els.model.addEventListener('focus', () => { openModelPanel(); loadModels(); });
         els.model.addEventListener('input', () => { activeModelIdx = -1; renderModelPanel(); els.modelPanel.classList.add('open'); });
+        els.model.addEventListener('change', saveSettings);
         els.model.addEventListener('blur', () => setTimeout(closeModelPanel, 150));
         els.model.addEventListener('keydown', (e) => {
             const items = els.modelPanel.querySelectorAll('.combo-item');
             if (e.key === 'ArrowDown') { e.preventDefault(); activeModelIdx = Math.min(items.length - 1, activeModelIdx + 1); renderModelPanel(); }
             else if (e.key === 'ArrowUp') { e.preventDefault(); activeModelIdx = Math.max(0, activeModelIdx - 1); renderModelPanel(); }
-            else if (e.key === 'Enter' && activeModelIdx >= 0 && items[activeModelIdx]) { e.preventDefault(); els.model.value = items[activeModelIdx].textContent; closeModelPanel(); }
+            else if (e.key === 'Enter' && activeModelIdx >= 0 && items[activeModelIdx]) { e.preventDefault(); els.model.value = items[activeModelIdx].textContent; saveSettings(); closeModelPanel(); }
             else if (e.key === 'Escape') { closeModelPanel(); }
+        });
+
+        // 提示词模型事件
+        els.promptModel.addEventListener('focus', () => { openPromptModelPanel(); loadModels(); });
+        els.promptModel.addEventListener('input', () => { activePromptModelIdx = -1; renderPromptModelPanel(); els.promptModelPanel.classList.add('open'); });
+        els.promptModel.addEventListener('change', saveSettings);
+        els.promptModel.addEventListener('blur', () => setTimeout(closePromptModelPanel, 150));
+        els.promptModel.addEventListener('keydown', (e) => {
+            const items = els.promptModelPanel.querySelectorAll('.combo-item');
+            if (e.key === 'ArrowDown') { e.preventDefault(); activePromptModelIdx = Math.min(items.length - 1, activePromptModelIdx + 1); renderPromptModelPanel(); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); activePromptModelIdx = Math.max(0, activePromptModelIdx - 1); renderPromptModelPanel(); }
+            else if (e.key === 'Enter' && activePromptModelIdx >= 0 && items[activePromptModelIdx]) { e.preventDefault(); els.promptModel.value = items[activePromptModelIdx].textContent; saveSettings(); closePromptModelPanel(); }
+            else if (e.key === 'Escape') { closePromptModelPanel(); }
         });
         // ========== End Model 下拉 ==========
     </script>
