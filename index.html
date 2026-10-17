@@ -1060,7 +1060,7 @@
             optimizeBtn: $('#optimizeBtn'),
             revertBtn: $('#revertBtn'),
             clearPromptBtn: $('#clearPromptBtn'),
-            promptChips: $('.prompt-chip'),
+            promptChips: $$('.prompt-chip'),
             genBtn: $('#genBtn'),
             cancelBtn: $('#cancelBtn'),
             loadingMini: $('#loadingMini'),
@@ -1261,6 +1261,9 @@
         let modelIds = [];
         let activeModelIdx = -1;
         let modelLoadMessage = '';
+        let promptModelIds = [];
+        let activePromptModelIdx = -1;
+        const DOUBAO_PROMPT_FALLBACK_MODELS = ['doubao-1.5-pro', 'doubao-1.5-lite'];
         const DOUBAO_MIN_PIXELS = 3686400;
         const DOUBAO_DEFAULT_SIZE = '2K';
         const DOUBAO_ALLOWED_SIZE_LABELS = ['2K', '4K'];
@@ -2138,22 +2141,24 @@
         });
 
         // ========== Model & 提示词模型 下拉（聚焦时自动从接口拉取模型列表） ==========
-        let promptModelIds = [];
-        let activePromptModelIdx = -1;
-        const DOUBAO_PROMPT_FALLBACK_MODELS = ['doubao-1.5-pro', 'doubao-1.5-lite'];
 
-        function renderModelPanel() {
+        function renderModelPanel(filterText = '') {
             els.modelPanel.innerHTML = '';
-            const list = modelIds.length ? modelIds : DOUBAO_FALLBACK_MODELS;
+            const baseList = modelIds.length ? modelIds : DOUBAO_FALLBACK_MODELS;
+            const keyword = String(filterText || '').trim().toLowerCase();
+            const filtered = keyword ? baseList.filter((id) => id.toLowerCase().includes(keyword)) : baseList;
+            const list = filtered.length ? filtered : baseList;
             if (modelLoadMessage) {
                 const status = document.createElement('div');
                 status.className = 'combo-empty';
                 status.textContent = modelLoadMessage;
                 els.modelPanel.appendChild(status);
             }
+            const currentVal = els.model.value.trim();
             list.forEach((id, i) => {
                 const item = document.createElement('div');
-                item.className = 'combo-item' + (i === activeModelIdx ? ' active' : '');
+                const isActive = i === activeModelIdx || (activeModelIdx < 0 && id === currentVal);
+                item.className = 'combo-item' + (isActive ? ' active' : '');
                 item.textContent = id;
                 item.addEventListener('mousedown', (e) => {
                     e.preventDefault();
@@ -2165,12 +2170,15 @@
             });
         }
 
-        function openModelPanel() { activeModelIdx = -1; renderModelPanel(); els.modelPanel.classList.add('open'); }
+        function openModelPanel(filterText = '') { activeModelIdx = -1; renderModelPanel(filterText); els.modelPanel.classList.add('open'); }
         function closeModelPanel() { els.modelPanel.classList.remove('open'); }
 
-        function renderPromptModelPanel() {
+        function renderPromptModelPanel(filterText = '') {
             els.promptModelPanel.innerHTML = '';
-            const list = promptModelIds.length ? promptModelIds : DOUBAO_PROMPT_FALLBACK_MODELS;
+            const baseList = promptModelIds.length ? promptModelIds : DOUBAO_PROMPT_FALLBACK_MODELS;
+            const keyword = String(filterText || '').trim().toLowerCase();
+            const filtered = keyword ? baseList.filter((id) => id.toLowerCase().includes(keyword)) : baseList;
+            const list = filtered.length ? filtered : baseList;
             if (!list.length) {
                 const empty = document.createElement('div');
                 empty.className = 'combo-empty';
@@ -2178,9 +2186,11 @@
                 els.promptModelPanel.appendChild(empty);
                 return;
             }
+            const currentVal = els.promptModel.value.trim();
             list.forEach((id, i) => {
                 const item = document.createElement('div');
-                item.className = 'combo-item' + (i === activePromptModelIdx ? ' active' : '');
+                const isActive = i === activePromptModelIdx || (activePromptModelIdx < 0 && id === currentVal);
+                item.className = 'combo-item' + (isActive ? ' active' : '');
                 item.textContent = id;
                 item.addEventListener('mousedown', (e) => {
                     e.preventDefault();
@@ -2192,7 +2202,7 @@
             });
         }
 
-        function openPromptModelPanel() { activePromptModelIdx = -1; renderPromptModelPanel(); els.promptModelPanel.classList.add('open'); }
+        function openPromptModelPanel(filterText = '') { activePromptModelIdx = -1; renderPromptModelPanel(filterText); els.promptModelPanel.classList.add('open'); }
         function closePromptModelPanel() { els.promptModelPanel.classList.remove('open'); }
 
         async function loadModels() {
@@ -2265,10 +2275,11 @@
         }
 
         // 生图模型事件
+        els.modelPanel.addEventListener('mousedown', (e) => e.preventDefault());
         els.model.addEventListener('focus', () => { openModelPanel(); loadModels(); });
-        els.model.addEventListener('input', () => { activeModelIdx = -1; renderModelPanel(); els.modelPanel.classList.add('open'); });
+        els.model.addEventListener('click', () => { if (!els.modelPanel.classList.contains('open')) { openModelPanel(); loadModels(); } });
+        els.model.addEventListener('input', () => { openModelPanel(els.model.value); });
         els.model.addEventListener('change', saveSettings);
-        els.model.addEventListener('blur', () => setTimeout(closeModelPanel, 150));
         els.model.addEventListener('keydown', (e) => {
             const items = els.modelPanel.querySelectorAll('.combo-item');
             if (e.key === 'ArrowDown') { e.preventDefault(); activeModelIdx = Math.min(items.length - 1, activeModelIdx + 1); renderModelPanel(); }
@@ -2278,16 +2289,27 @@
         });
 
         // 提示词模型事件
+        els.promptModelPanel.addEventListener('mousedown', (e) => e.preventDefault());
         els.promptModel.addEventListener('focus', () => { openPromptModelPanel(); loadModels(); });
-        els.promptModel.addEventListener('input', () => { activePromptModelIdx = -1; renderPromptModelPanel(); els.promptModelPanel.classList.add('open'); });
+        els.promptModel.addEventListener('click', () => { if (!els.promptModelPanel.classList.contains('open')) { openPromptModelPanel(); loadModels(); } });
+        els.promptModel.addEventListener('input', () => { openPromptModelPanel(els.promptModel.value); });
         els.promptModel.addEventListener('change', saveSettings);
-        els.promptModel.addEventListener('blur', () => setTimeout(closePromptModelPanel, 150));
         els.promptModel.addEventListener('keydown', (e) => {
             const items = els.promptModelPanel.querySelectorAll('.combo-item');
             if (e.key === 'ArrowDown') { e.preventDefault(); activePromptModelIdx = Math.min(items.length - 1, activePromptModelIdx + 1); renderPromptModelPanel(); }
             else if (e.key === 'ArrowUp') { e.preventDefault(); activePromptModelIdx = Math.max(0, activePromptModelIdx - 1); renderPromptModelPanel(); }
             else if (e.key === 'Enter' && activePromptModelIdx >= 0 && items[activePromptModelIdx]) { e.preventDefault(); els.promptModel.value = items[activePromptModelIdx].textContent; saveSettings(); closePromptModelPanel(); }
             else if (e.key === 'Escape') { closePromptModelPanel(); }
+        });
+
+        // 点击外部或切换焦点到外部时关闭模型下拉面板（避免拖动下拉滚动条时触发 blur 导致面板闪退）
+        document.addEventListener('mousedown', (e) => {
+            if (!els.model.parentElement.contains(e.target)) closeModelPanel();
+            if (!els.promptModel.parentElement.contains(e.target)) closePromptModelPanel();
+        });
+        document.addEventListener('focusin', (e) => {
+            if (!els.model.parentElement.contains(e.target)) closeModelPanel();
+            if (!els.promptModel.parentElement.contains(e.target)) closePromptModelPanel();
         });
         // ========== End Model 下拉 ==========
     </script>
