@@ -936,7 +936,7 @@
                         <div>
                             <label for="promptModel">提示词模型（选填，用于AI润色扩写）</label>
                             <div class="combo">
-                                <input id="promptModel" placeholder="默认推荐 gemini-2.5-flash，聚焦可拉取模型列表选择" autocomplete="off" />
+                                <input id="promptModel" placeholder="默认推荐 gemini-3.8-flash，聚焦可拉取模型列表选择" autocomplete="off" />
                                 <div id="promptModelPanel" class="combo-panel"></div>
                             </div>
                         </div>
@@ -1252,13 +1252,10 @@
         let activeModelIdx = -1;
         let promptModelIds = [];
         let activePromptModelIdx = -1;
-        const DEFAULT_PROMPT_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'];
+        const DEFAULT_PROMPT_MODELS = ['gemini-3.8-flash'];
         const GEMINI_IMAGE_MODELS = [
-            'gemini-3.1-flash-image',
             'gemini-3-pro-image',
-            'imagen-3.0-generate-002',
-            'imagen-3.0-capability-002',
-            'gemini-2.0-flash-exp'
+            'gemini-nano-banana-2.1',
         ];
         const DEPRECATED_GEMINI_IMAGE_MODELS = new Map([
             ['gemini-3.1-flash-image-preview', 'gemini-3.1-flash-image'],
@@ -1294,8 +1291,8 @@
         function applySettings(settings) {
             els.baseUrl.value = settings?.baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
             els.apiKey.value = settings?.apiKey || '';
-            els.model.value = settings?.model ? resolveImageModelId(settings.model) : 'gemini-3.1-flash-image';
-            els.promptModel.value = settings?.promptModel || 'gemini-2.5-flash';
+            els.model.value = settings?.model ? resolveImageModelId(settings.model) : 'gemini-3-pro-image';
+            els.promptModel.value = settings?.promptModel || 'gemini-3.8-flash';
             modelIds = [];
             promptModelIds = [];
             renderModelPanel();
@@ -2066,7 +2063,7 @@
             if (apiKey) {
                 // 优先使用用户选择或输入的提示词模型
                 const customPromptModel = els.promptModel.value.trim();
-                const candidateModels = [customPromptModel, 'gemini-2.5-flash', 'gemini-2.0-flash', els.model.value.trim()].filter(Boolean);
+                const candidateModels = [customPromptModel, DEFAULT_PROMPT_MODELS[0], els.model.value.trim()].filter(Boolean);
                 for (const m of candidateModels) {
                     try {
                         const modelPath = m.startsWith('models/') ? m : 'models/' + m;

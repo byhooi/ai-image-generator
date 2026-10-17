@@ -1263,16 +1263,14 @@
         let modelLoadMessage = '';
         let promptModelIds = [];
         let activePromptModelIdx = -1;
-        const DOUBAO_PROMPT_FALLBACK_MODELS = ['doubao-1.5-pro', 'doubao-1.5-lite'];
+        const DOUBAO_PROMPT_FALLBACK_MODELS = ['doubao-seed-2-1-lite-260915'];
         const DOUBAO_MIN_PIXELS = 3686400;
         const DOUBAO_DEFAULT_SIZE = '2K';
         const DOUBAO_ALLOWED_SIZE_LABELS = ['2K', '4K'];
-        const DOUBAO_DEFAULT_MODEL = 'doubao-seedream-4-5-251128';
+        const DOUBAO_DEFAULT_MODEL = 'doubao-seedream-5-0-260128';
         const DOUBAO_FALLBACK_MODELS = [
-            'doubao-seedream-4-5-251128',
             'doubao-seedream-5-0-260128',
-            'doubao-seedream-3-0-240828',
-            'doubao-seedream-3-0-i2i-240828',
+            'doubao-seedream-4-5-251128',
         ];
         const DOUBAO_OFFICIAL_HOST = 'ark.cn-beijing.volces.com';
 
@@ -2120,7 +2118,7 @@
 
             if (apiKey) {
                 try {
-                    const chosenModel = els.promptModel.value.trim() || els.model.value.trim() || 'doubao-1.5-pro';
+                    const chosenModel = els.promptModel.value.trim() || DOUBAO_PROMPT_FALLBACK_MODELS[0];
                     const chatUrl = buildApiUrl(baseUrl, '/chat/completions');
                     const resp = await fetch(chatUrl, {
                         method: 'POST',
@@ -2251,7 +2249,7 @@
             if (isOfficialDoubaoBaseUrl(baseUrl)) {
                 modelIds = DOUBAO_FALLBACK_MODELS;
                 promptModelIds = DOUBAO_PROMPT_FALLBACK_MODELS;
-                modelLoadMessage = '火山方舟官方地址不提供可靠的模型列表接口，已显示常用 Seedream 模型。请确认已开通对应模型；自定义推理接入点可直接填写 ID。';
+                modelLoadMessage = '火山方舟官方地址不提供可靠的模型列表接口，已显示常用生图与提示词模型。请确认已开通对应模型；自定义推理接入点可直接填写 ID。';
                 renderModelPanel();
                 renderPromptModelPanel();
                 return;
